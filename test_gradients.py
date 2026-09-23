@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
-from physics import layer, profile, normalize, solve, alignment, validate, example
+from physics import (layer, profile, normalize, solve, alignment, validate, example,
+                     shift_band, drawing_segments)
 
 class Gradients(unittest.TestCase):
     def test_band_allocation(self):
@@ -48,5 +49,42 @@ class Gradients(unittest.TestCase):
         r=solve(layers)
         self.assertLess(r['error'],1e-9)
         np.testing.assert_allclose(r['Ec']-r['Ev'],r['Eg'])
+
+    def test_drag_band_and_endpoints(self):
+        a=layer('graded',500,25,1.5,4,Nd=1e15,Na=1e14)
+        a.update(Eg_mode='线性',Eg_end=1.8,band_fraction=.5,Nd_mode='对数',Nd_end=1e17)
+        t=np.linspace(0,1,17);base=profile(a,t)
+        for band in ('Ec','Ev'):
+            for part in ('left','right','whole'):
+                b=shift_band(a,band,part,.12);p=profile(b,t)
+                expected=.12*({'left':1-t,'right':t,'whole':np.ones_like(t)}[part])
+                ec_change=-p['chi']+base['chi']
+                ev_change=ec_change-p['Eg']+base['Eg']
+                np.testing.assert_allclose(ec_change,expected if band=='Ec' else 0,atol=1e-12)
+                np.testing.assert_allclose(ev_change,expected if band=='Ev' else 0,atol=1e-12)
+                np.testing.assert_array_equal(p['Nd'],base['Nd'])
+                np.testing.assert_array_equal(p['Na'],base['Na'])
+                self.assertEqual(b['mun'],a['mun'])
+                self.assertEqual(b['taun'],a['taun'])
+
+    def test_invalid_drag_does_not_mutate_original(self):
+        a=layer('test',500,25,1.5,4);saved=dict(a)
+        with self.assertRaises(ValueError):shift_band(a,'Ev','right',2)
+        with self.assertRaises(ValueError):shift_band(a,'Ec','whole',5)
+        self.assertEqual(a,saved)
+
+    def test_independent_affinity_and_display_endpoints(self):
+        layers=example();layers[1]=shift_band(layers[1],'Ec','right',.15)
+        r=solve(layers);segs=drawing_segments(layers,r)
+        self.assertEqual(segs[0]['x'][0],0)
+        self.assertEqual(segs[-1]['x'][-1],550)
+        self.assertAlmostEqual(segs[0]['Ec'][0],5-layers[0]['chi'])
+        self.assertAlmostEqual(segs[-1]['Ec'][-1],4.1-layers[-1]['chi'])
+        for a,s in zip(layers,segs):
+            p=profile(a,[0,1])
+            np.testing.assert_allclose((s['Ec']-s['Ev'])[[0,-1]],p['Eg'])
+        # Electrostatic potential is continuous at an ideal interface.
+        p0=profile(layers[0],[1]);p1=profile(layers[1],[0])
+        self.assertAlmostEqual(-p0['chi'][0]-segs[0]['Ec'][-1],-p1['chi'][0]-segs[1]['Ec'][0])
 
 if __name__=='__main__':unittest.main()

@@ -16,6 +16,8 @@ def normalize(a):
         a.setdefault(key+'_mode', '均匀')
         a.setdefault(key+'_end', a[key])
     a.setdefault('band_fraction', 0.)
+    a.setdefault('affinity_mode', '随带隙分配')
+    a.setdefault('chi_end', a['chi'])
     return a
 
 def profile(a, t):
@@ -26,8 +28,59 @@ def profile(a, t):
         mode=a[key+'_mode']; start=a[key]; end=a[key+'_end']
         if mode=='线性':out[key]=start+(end-start)*t
         elif mode=='对数':out[key]=np.exp(np.log(start)+(np.log(end)-np.log(start))*t)
-    out['chi']=a['chi']-a['band_fraction']*(out['Eg']-a['Eg'])
+    if a['affinity_mode']=='独立端点':
+        out['chi']=a['chi']+(a['chi_end']-a['chi'])*t
+    else:
+        out['chi']=a['chi']-a['band_fraction']*(out['Eg']-a['Eg'])
     return out
+
+def shift_band(a, band, part, delta):
+    """Shift one vacuum-reference band edge, preserving the opposite band.
+
+    During equilibrium dragging this is a frozen-potential edit, not inversion.
+    Endpoints are geometrical layer endpoints, not finite-volume cell centres.
+    """
+    if band not in ('Ec','Ev') or part not in ('left','right','whole'):
+        raise ValueError('无效的能带拖动目标')
+    if not np.isfinite(delta):raise ValueError('拖动位移必须为有限数值')
+    a=normalize(a); p=profile(a,[0,1])
+    ec=-p['chi']; ev=ec-p['Eg']
+    weight={'left':np.array([1.,0.]),'right':np.array([0.,1.]),'whole':np.ones(2)}[part]
+    if band=='Ec':ec=ec+delta*weight
+    else:ev=ev+delta*weight
+    gap=ec-ev; chi=-ec
+    if np.any(gap<=0):raise ValueError('带隙须大于 0，导带与价带不能交叉')
+    if np.any(chi<0):raise ValueError('电子亲和能须大于或等于 0')
+    a.update(Eg=float(gap[0]),Eg_end=float(gap[1]),
+             Eg_mode='均匀' if abs(gap[1]-gap[0])<1e-10 else '线性',
+             chi=float(chi[0]),chi_end=float(chi[1]),affinity_mode='独立端点')
+    return a
+
+def drawing_segments(layers, result, left=5., right=4.1):
+    """Add physical endpoints for plotting and dragging cell-centred solutions."""
+    segments=[]; offset=0; start=0.
+    if 'phi' in result:
+        faces=[-left]
+        for i in range(len(layers)-1):
+            offset+=int(result['counts'][i])
+            a,b=layers[i],layers[i+1]
+            ga=a['eps']/(a['thickness']/result['counts'][i])
+            gb=b['eps']/(b['thickness']/result['counts'][i+1])
+            faces.append((ga*result['phi'][offset-1]+gb*result['phi'][offset])/(ga+gb))
+        faces.append(-right)
+    offset=0
+    for i,(a,count) in enumerate(zip(layers,result['counts'])):
+        sl=slice(offset,offset+count); end=start+a['thickness']
+        if 'phi' in result:
+            xx=np.r_[start,result['x'][sl],end]
+            potential=np.r_[faces[i],result['phi'][sl],faces[i+1]]
+            p=profile(a,(xx-start)/a['thickness'])
+            ec=-p['chi']-potential; ev=ec-p['Eg']
+        else:
+            xx=result['x'][sl];ec=result['Ec'][sl];ev=result['Ev'][sl]
+        segments.append(dict(x=xx,Ec=ec,Ev=ev))
+        start=end; offset+=count
+    return segments
 
 def alignment(layers):
     parts=[]; positions=[]; start=0
@@ -70,7 +123,11 @@ def validate(layers, temperature, left, right):
                 raise ValueError(key+' 对数渐变的起点与终点必须大于零')
         if not np.isfinite(a['band_fraction']) or not 0<=a['band_fraction']<=1:
             raise ValueError('导带分配比例必须在 0–1 之间')
-        if np.any(profile(a,[0,1])['chi']<0):raise ValueError('带隙渐变导致负电子亲和能，请调整导带分配比例')
+        if a['affinity_mode'] not in ('随带隙分配','独立端点'):
+            raise ValueError('不支持的电子亲和能模式')
+        if not np.isfinite(a['chi_end']) or a['chi_end']<0:
+            raise ValueError('电子亲和能右侧终点必须为有限非负数')
+        if np.any(profile(a,[0,1])['chi']<0):raise ValueError('带隙渐变导致负电子亲和能，请调整带边设置')
 
 def solve(layers, temperature=300, left=5.0, right=4.1, points=120):
     validate(layers, temperature, left, right)
