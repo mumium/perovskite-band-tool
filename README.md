@@ -1,10 +1,16 @@
 # 钙钛矿能带小工具
 
+<img src="assets/logo.png" width="96" alt="钙钛矿能带工具图标">
+
 Python 桌面工具：编辑异质结材料参数，查看真空参考能级排列和自洽热平衡能带，支持逐层渐变带隙、渐变掺杂和鼠标拖动能带。
 
 ![渐变能带预览](preview_gradient.png)
 
 双击 `start.bat`，或执行 `python app.py`。依赖：`pip install -r requirements.txt`。
+
+Windows 打包版：双击 `dist/PerovskiteBandTool.exe`，无需安装 Python。可单独复制 EXE 到其他 Windows 64 位电脑运行。
+
+重新打包：安装项目依赖及 `pyinstaller`，再运行 `build_exe.bat`。程序为单文件无控制台版本，首次启动需要解压运行依赖，可能稍慢。
 
 ## 鼠标拖动能带
 

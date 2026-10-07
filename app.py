@@ -1,6 +1,7 @@
 """Run: python app.py"""
 import csv
 import json
+import sys
 from copy import deepcopy
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -19,6 +20,11 @@ from physics import (FIELDS, example, layer, solve, validate, normalize, alignme
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
+        assets = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets'
+        self._app_icon = tk.PhotoImage(file=str(assets / 'logo.png'))
+        self.iconphoto(True, self._app_icon)
+        if sys.platform == 'win32':
+            self.iconbitmap(str(assets / 'logo.ico'))
         self.title('钙钛矿能带小工具 · 能带拖动版')
         self.geometry('1320x880'); self.minsize(1080,760)
         self.layers=[normalize(a) for a in example()]; self.index=0; self.busy=False; self.pending=None
