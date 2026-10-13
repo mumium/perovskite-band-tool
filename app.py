@@ -15,7 +15,8 @@ rcParams['axes.unicode_minus']=False
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from physics import (FIELDS, example, layer, solve, validate, normalize, alignment,
-                     profile, shift_band, drawing_segments)
+                     profile, shift_band)
+from analysis_views import analysis_segments, interface_offsets, sample_position
 
 class App(tk.Tk):
     def __init__(self):
@@ -25,7 +26,7 @@ class App(tk.Tk):
         self.iconphoto(True, self._app_icon)
         if sys.platform == 'win32':
             self.iconbitmap(str(assets / 'logo.ico'))
-        self.title('钙钛矿能带小工具 · 能带拖动版')
+        self.title('钙钛矿能带小工具 · 能带分析版')
         self.geometry('1320x880'); self.minsize(1080,760)
         self.layers=[normalize(a) for a in example()]; self.index=0; self.busy=False; self.pending=None
         self.result=None; self.snapshot=None
@@ -93,11 +94,26 @@ class App(tk.Tk):
         ttk.Label(drag_controls,text='拖线：移动该带边  ·  拖圆点：改变渐变  ·  Esc：取消').pack(side='left')
         self.drag_summary=tk.StringVar()
         ttk.Label(right,textvariable=self.drag_summary,foreground='#245565',wraplength=800).pack(fill='x',pady=5)
+        view_controls=ttk.Frame(right);view_controls.pack(fill='x',pady=(0,5))
+        ttk.Label(view_controls,text='查看').pack(side='left',padx=4)
+        self.view=tk.StringVar(value='能带')
+        self.view_combo=ttk.Combobox(view_controls,textvariable=self.view,
+                                    values=['能带','电势','电场','载流子浓度'],state='readonly',width=14)
+        self.view_combo.pack(side='left')
+        self.view_combo.bind('<<ComboboxSelected>>',self.change_view)
+        self.show_offsets=tk.BooleanVar(value=True)
+        ttk.Checkbutton(view_controls,text='标注界面 ΔEc / ΔEv（右 − 左）',
+                        variable=self.show_offsets,command=self.change_view).pack(side='left',padx=12)
+        self.hover_text=tk.StringVar(value='将鼠标移到图中查看该位置的数值。\n')
+        ttk.Label(right,textvariable=self.hover_text,foreground='#245565',
+                  wraplength=850,justify='left').pack(fill='x',pady=(0,5))
         self.fig=Figure(figsize=(8,6),dpi=100); self.ax=self.fig.add_subplot(111)
         self.canvas=FigureCanvasTkAgg(self.fig,master=right); self.canvas.get_tk_widget().pack(fill='both',expand=True)
         self.toolbar=NavigationToolbar2Tk(self.canvas,right)
         self.canvas.mpl_connect('button_press_event',self.drag_press)
         self.canvas.mpl_connect('motion_notify_event',self.drag_motion)
+        self.canvas.mpl_connect('motion_notify_event',self.hover_motion)
+        self.canvas.mpl_connect('figure_leave_event',self.clear_hover)
         self.canvas.mpl_connect('button_release_event',self.drag_release)
         self.bind('<Escape>',self.cancel_drag)
         self.status=tk.StringVar(value='')
@@ -139,6 +155,7 @@ class App(tk.Tk):
         self.update_band_controls()
         if self.pending:self.after_cancel(self.pending)
         self.result=None
+        self.clear_hover()
         self.status.set('参数已变更，等待重新计算…')
         self.pending=self.after(600,self.calculate)
 
@@ -154,23 +171,35 @@ class App(tk.Tk):
             else:
                 r=alignment(self.layers)
                 note='真空参考排列：不含接触后的电荷转移与能带弯曲。'
-            r['mode']=self.mode.get(); self.result=r; self.plot()
+            r['mode']=self.mode.get()
+            r['temperature']=s['T'];r['left']=s['left'];r['right']=s['right']
+            self.result=r
+            self.view_combo.configure(values=['能带','电势','电场','载流子浓度'] if 'phi' in r else ['能带'])
+            if 'phi' not in r:self.view.set('能带')
+            self.plot()
             self.status.set(note+'  模型：一维、暗态、零外加偏压；不含离子、陷阱、界面偶极。')
             return True
         except Exception as e:
-            self.result=None; self.ax.set_title('当前输入无有效结果 · 图中保留上一次曲线',color='#bd452c'); self.canvas.draw_idle()
+            self.result=None;self.clear_hover(); self.ax.set_title('当前输入无有效结果 · 图中保留上一次曲线',color='#bd452c'); self.canvas.draw_idle()
             self.status.set('未更新：'+str(e)); return False
 
     def plot(self):
         r=self.result; ax=self.ax; ax.clear(); pos=0
-        self.band_artists={}
+        ax.set_yscale('linear')
+        self.band_artists={};self.offset_artists=[]
+        self.hover_line=None;self.hover_text.set('将鼠标移到图中查看数值；界面位置取右侧材料极限。\n')
         colors=['#e4edf8','#f9e9d4','#e0f0e6','#efe5f5']
         for i,a in enumerate(self.layers):
             end=pos+a['thickness']; ax.axvspan(pos,end,color=colors[i%4],alpha=.7)
             ax.text((pos+end)/2,1.015,a['name'],ha='center',transform=ax.get_xaxis_transform(),fontsize=9,rotation=15)
             ax.axvline(end,color='#aab4bd',lw=.7); pos=end
         # Draw each layer separately to avoid interpolating interface discontinuities.
-        self.segments=drawing_segments(self.layers,r,float(self.settings['left'].get()),float(self.settings['right'].get()))
+        self.segments=analysis_segments(self.layers,r,r['temperature'],r['left'],r['right'])
+        self.offsets=interface_offsets(self.layers,self.segments)
+        if self.view.get()!='能带':
+            self.plot_diagnostic()
+            self.finish_plot(pos)
+            return
         for i,segment in enumerate(self.segments):
             for key,color in [('Ec','#2279b5'),('Ev','#cd6930')]:
                 line,=ax.plot(segment['x'],segment[key],color=color,lw=2,
@@ -181,15 +210,79 @@ class App(tk.Tk):
         else:ax.axhline(0,color='#537357',ls='--',label='真空能级 = 0 eV')
         if self.snapshot and self.snapshot['mode']==r['mode']:
             for key,color in [('Ec','#2279b5'),('Ev','#cd6930')]:
-                ax.plot(self.snapshot['x'],self.snapshot[key],color=color,ls=':',alpha=.65,label=key+' 对照')
+                for i,s in enumerate(self.snapshot['segments']):
+                    ax.plot(s['x'],s[key],color=color,ls=':',alpha=.65,label=key+' 对照' if i==0 else None)
         ax.set(xlabel='位置 x (nm)',ylabel='能量 (eV)',xlim=(0,pos))
         energies=[np.array([0.])]+[s[k] for s in self.segments for k in ('Ec','Ev')]
         if self.snapshot and self.snapshot['mode']==r['mode']:
             energies.extend([self.snapshot['Ec'],self.snapshot['Ev']])
         low=min(float(np.min(v)) for v in energies);high=max(float(np.max(v)) for v in energies)
         margin=max(.15,.12*(high-low));ax.set_ylim(low-margin,high+margin)
+        if self.show_offsets.get():
+            for i,offset in enumerate(self.offsets):
+                for key,color,dy in [('Ec','#2279b5',14),('Ev','#cd6930',-30)]:
+                    y=self.segments[i+1][key][0]
+                    near_right=offset['x']>.75*pos
+                    artist=ax.annotate(f"Δ{key} {offset[key]:+.3f} eV",xy=(offset['x'],y),
+                                       xytext=(-8 if near_right else 8,dy),textcoords='offset points',
+                                       ha='right' if near_right else 'left',fontsize=8,color=color,
+                                       bbox=dict(boxstyle='round,pad=.25',fc='white',ec=color,alpha=.9),
+                                       arrowprops=dict(arrowstyle='-',color=color,lw=.7))
+                    self.offset_artists.append(artist)
+        self.finish_plot(pos)
+
+    def finish_plot(self, width):
+        ax=self.ax
+        ax.set_xlabel('位置 x (nm)');ax.set_xlim(0,width)
         ax.grid(alpha=.18); ax.legend(loc='best')
+        self.hover_line=ax.axvline(0,color='#536a80',ls=':',lw=.8,visible=False)
         self.fig.tight_layout(pad=2.4); self.canvas.draw_idle()
+
+    def plot_diagnostic(self):
+        ax=self.ax;view=self.view.get()
+        choices={'电势': [('phi','φ','#5267ad')],
+                 '电场': [('field','E','#9755b3')],
+                 '载流子浓度': [('n','电子 n','#2279b5'),('p','空穴 p','#cd6930')]}
+        for key,label,color in choices[view]:
+            for i,s in enumerate(self.segments):
+                ax.plot(s['x'],s[key],color=color,lw=2,label=label if i==0 else None)
+        snapshot=self.snapshot
+        if snapshot and snapshot['mode']==self.result['mode']:
+            # Snapshots keep their own layer geometry, including interface limits.
+            for key,label,color in choices[view]:
+                for i,s in enumerate(snapshot['segments']):
+                    ax.plot(s['x'],s[key],color=color,ls=':',alpha=.65,
+                            label=label+' 对照' if i==0 else None)
+        ax.set_ylabel({'电势':'电势 φ (V)','电场':'电场 E (V/cm)',
+                       '载流子浓度':r'载流子浓度 (cm$^{-3}$)'}[view])
+        if view=='载流子浓度':ax.set_yscale('log')
+        else:ax.axhline(0,color='#87929b',lw=.7,ls='--')
+        ax.set_title('热平衡 · E = −dφ/dx（分层求导）' if view=='电场' else '热平衡 · '+view,
+                     fontsize=10,y=1.13,pad=6)
+
+    def change_view(self, event=None):
+        if self.drag:self.cancel_drag()
+        if self.result is not None:
+            if 'phi' not in self.result:self.view.set('能带')
+            self.plot()
+
+    def clear_hover(self, event=None):
+        self.hover_text.set('将鼠标移到图中查看数值。\n')
+        line=getattr(self,'hover_line',None)
+        if line is not None and line.get_visible():
+            line.set_visible(False);self.canvas.draw_idle()
+
+    def hover_motion(self, event):
+        if self.drag or self.result is None or self.toolbar.mode or event.inaxes!=self.ax or event.xdata is None:
+            self.clear_hover();return
+        x=float(np.clip(event.xdata,0,sum(a['thickness'] for a in self.layers)))
+        v=sample_position(self.layers,self.segments,x,self.result['temperature'])
+        text=f"{v['name']}  |  x {x:.2f} nm  ·  Ec {v['Ec']:.4f} eV  ·  Ev {v['Ev']:.4f} eV  ·  Eg {v['Eg']:.4f} eV"
+        if 'phi' in v:
+            text+=f"\nφ {v['phi']:.4f} V  ·  E {v['field']:+.3e} V/cm  ·  n {v['n']:.3e} cm⁻³  ·  p {v['p']:.3e} cm⁻³"
+        else:text+='\n真空参考排列：不计算静电势、电场和载流子浓度。'
+        self.hover_text.set(text)
+        self.hover_line.set_xdata([x,x]);self.hover_line.set_visible(True);self.canvas.draw_idle()
 
     def drag_target(self,event):
         """Pixel-space hit testing keeps narrow layers and endpoints usable."""
@@ -208,10 +301,12 @@ class App(tk.Tk):
         return min(matches,key=lambda z:(z[0],z[1]!=self.index)) if matches else None
 
     def drag_press(self,event):
-        if event.button!=1 or not self.drag_enabled.get() or self.toolbar.mode or self.result is None:return
+        if event.button!=1 or self.view.get()!='能带' or not self.drag_enabled.get() or self.toolbar.mode or self.result is None:return
         target=self.drag_target(event)
         if target is None:return
         _,i,key,part=target
+        self.clear_hover()
+        for artist in self.offset_artists:artist.set_visible(False)
         if self.pending:self.after_cancel(self.pending);self.pending=None
         self.index=i;self.refresh_list();self.show_fields()
         self.drag=dict(before=deepcopy(self.layers),result=self.result,index=i,band=key,part=part,
@@ -248,7 +343,7 @@ class App(tk.Tk):
         if not self.drag:return
         d=self.drag;self.drag=None
         self.canvas.get_tk_widget().configure(cursor='')
-        if not d['changed']:return
+        if not d['changed']:self.plot();return
         if self.calculate():
             self.drag_history.append((d['before'],deepcopy(self.layers),d['index']))
             self.drag_history=self.drag_history[-30:]
@@ -339,6 +434,9 @@ class App(tk.Tk):
         if p:
             r=self.result;keys=['x','Ec','Ev']+(['phi','n','p'] if 'phi' in r else [])
             header=['x_nm','Ec_eV','Ev_eV']+(['phi_V','n_cm-3','p_cm-3'] if 'phi' in r else [])
+            if 'phi' in r:
+                r['field']=np.concatenate([s['field'][1:-1] for s in self.segments])
+                keys+=['field'];header+=['E_V_per_cm']
             keys+=['Eg','chi','Nd','Na'];header+=['Eg_eV','chi_eV','Nd_cm-3','Na_cm-3']
             np.savetxt(p,np.column_stack([r[k] for k in keys]),delimiter=',',header=','.join(header),comments='')
 
@@ -348,7 +446,10 @@ class App(tk.Tk):
         if p:self.fig.savefig(p,dpi=220,bbox_inches='tight')
 
     def compare(self):
-        if self.calculate():self.snapshot={k:v.copy() if isinstance(v,np.ndarray) else v for k,v in self.result.items()};self.plot()
+        if self.calculate():
+            self.snapshot=deepcopy(self.result)
+            self.snapshot['segments']=deepcopy(self.segments)
+            self.plot()
 
     def clear_compare(self):self.snapshot=None;self.calculate()
 
@@ -365,6 +466,10 @@ class App(tk.Tk):
             '拖动后采用独立电子亲和能端点；掺杂、迁移率和寿命保持原值。'
             '平衡态拖动期间暂固定电势，松开后自洽求解，最终能带可能偏离预览；拖动不等于参数反演。'
             'Esc 取消；按钮可撤销。缩放/平移工具启用时暂停能带拖动。\n\n'
+            '查看菜单可切换能带、电势、电场和载流子浓度；后三者仅限热平衡模式。'
+            '鼠标悬停显示所在材料的 x、Ec、Ev、Eg 及热平衡读数；精确界面取右侧极限。'
+            '界面 ΔEc、ΔEv 定义为右侧减左侧，正负仅表示带边台阶方向。'
+            '电场为 E=-dφ/dx，按材料层分别求导，单位 V/cm；载流子浓度使用对数纵轴。\n\n'
             '单位：厚度 nm；能量 eV；态密度/掺杂 cm⁻³；迁移率 cm²/(V·s)；寿命 s。'
             '导出的参数表不是 SCAPS 原生文件。')
 

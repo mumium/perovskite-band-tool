@@ -91,4 +91,46 @@ class DragUI(unittest.TestCase):
                 with patch('app.filedialog.asksaveasfilename',return_value=str(path)):method()
                 self.assertIn('χ' if name=='parameters.csv' else 'chi_eV',path.read_text(encoding='utf-8-sig'))
 
+    def test_hover_and_interface_annotations(self):
+        a=self.app
+        self.assertEqual(len(a.offset_artists),4)
+        self.emit('motion_notify_event',250,-4)
+        self.assertIn('Ec',a.hover_text.get())
+        self.assertIn('Eg',a.hover_text.get())
+        self.assertIn('钙钛矿',a.hover_text.get())
+        self.assertTrue(a.hover_line.get_visible())
+        a.show_offsets.set(False);a.change_view();a.update()
+        self.assertEqual(a.offset_artists,[])
+        a.clear_hover();self.assertFalse(a.hover_line.get_visible())
+
+    def test_diagnostic_views_and_vacuum_mode(self):
+        a=self.app;a.mode.set('热平衡弯曲能带');a.calculate();a.update()
+        a.compare()
+        for view in ('电势','电场','载流子浓度'):
+            a.view.set(view);a.change_view();a.update()
+            self.assertEqual(a.band_artists,{})
+            self.assertEqual(a.ax.get_yscale(),'log' if view=='载流子浓度' else 'linear')
+            low,high=a.ax.get_ylim()
+            y=np.sqrt(low*high) if view=='载流子浓度' else (low+high)/2
+            self.emit('motion_notify_event',250,y)
+            self.assertIn('V/cm',a.hover_text.get())
+            self.assertIn('cm⁻³',a.hover_text.get())
+            self.emit('button_press_event',250,y)
+            self.assertIsNone(a.drag)
+            self.assertTrue(any('对照' in line.get_label() for line in a.ax.lines))
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'curve.csv'
+            with patch('app.filedialog.asksaveasfilename',return_value=str(path)):a.export_curve()
+            data=np.genfromtxt(path,delimiter=',',names=True)
+            self.assertIn('E_V_per_cm',data.dtype.names)
+            expected=np.concatenate([s['field'][1:-1] for s in a.segments])
+            np.testing.assert_allclose(data['E_V_per_cm'],expected)
+        a.mode.set('真空参考能级排列');a.calculate();a.update()
+        self.assertEqual(a.view.get(),'能带')
+        self.assertEqual(tuple(a.view_combo['values']),('能带',))
+        self.assertEqual(a.ax.get_yscale(),'linear')
+        a.mode.set('热平衡弯曲能带');a.calculate();a.update()
+        self.drag('Ec','right',.05)
+        self.assertLess(a.result['error'],1e-9)
+
 if __name__=='__main__':unittest.main()
