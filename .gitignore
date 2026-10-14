@@ -7,3 +7,7 @@ venv/
 build/
 dist/
 *.log
+*.o
+*.ppu
+*.rsj
+vendor/simsalabim/source/**/*.rst
