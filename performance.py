@@ -15,7 +15,7 @@ import time
 import numpy as np
 
 from physics import normalize, profile, validate
-from optics import get_optics, default_nk, validate_optics, prepare_optical_files, integrate
+from optics import get_optics, default_nk, validate_optics, prepare_optical_files, integrate, optical_model
 
 ENGINE_VERSION = '5.36'
 ENGINE_BUILD = '5.36-pds1'
@@ -29,6 +29,24 @@ EXTRA_FIELDS = [('Nt', '中性体陷阱浓度 Nt', 'cm⁻³'),
                 ('B', '双分子复合系数 B', 'cm³/s'),
                 ('transfer_n', '右界面电子传输速度', 'cm/s'),
                 ('transfer_p', '右界面空穴传输速度', 'cm/s')]
+INTERFACE_DEFAULTS = dict(Nt=0., Et=4.7, Cn=1e-8, Cp=1e-8, trap_type=0, auto_energy=True)
+EQE_DEFAULTS = dict(step_nm=10., photon_flux_cm2_s=1e14, background_scale=1.)
+
+
+def interface_parameters(layer):
+    return dict(INTERFACE_DEFAULTS) | layer.get('interface', {})
+
+
+def interface_energy(left, right):
+    """Positive depth below vacuum, within both adjacent endpoint band gaps."""
+    l, r = profile(left, [1.]), profile(right, [0.])
+    low = max(l['chi'][0], r['chi'][0])
+    high = min(l['chi'][0]+l['Eg'][0], r['chi'][0]+r['Eg'][0])
+    p = interface_parameters(left)
+    energy = (low+high)/2 if p['auto_energy'] else p['Et']
+    if p['Nt'] > 0 and not low < energy < high:
+        raise ValueError(f"{left['name']} / {right['name']}：界面陷阱深度须位于两侧共同禁带 ({low:g}, {high:g}) eV 内")
+    return float(energy)
 
 
 class SimulationCancelled(Exception):
@@ -44,6 +62,9 @@ def import_layers(layers):
         a.update(Nt=1e15, Et=a['Eg']/2, B=1e-10,
                  transfer_n=1e5, transfer_p=1e5, absorber=i == absorber)
         a.setdefault('optical_nk', default_nk(i, absorber))
+        ref_gap = 1.55 if a['optical_nk'] == dict(kind='builtin', name='MAPI') else a['Eg']
+        a.setdefault('optical_model', dict(mode='edge' if i == absorber else 'fixed', reference_gap=ref_gap))
+        a.setdefault('interface', deepcopy(INTERFACE_DEFAULTS))
         result.append(a)
     return result
 
@@ -172,6 +193,15 @@ def validate_device(layers, settings):
             raise ValueError(f"{a['name']}：陷阱位置 Et − Ev 须在 0 至本层最小 Eg 内")
         if a['transfer_n'] <= 0 or a['transfer_p'] <= 0:
             raise ValueError(f"{a['name']}：界面传输速度须 > 0")
+    for left, right in zip(layers[:-1], layers[1:]):
+        p = interface_parameters(left)
+        if any(not np.isfinite(p[k]) or p[k] < 0 for k in ('Nt', 'Et', 'Cn', 'Cp')):
+            raise ValueError('界面缺陷浓度、深度与捕获系数须为有限非负数')
+        if p['trap_type'] not in (-1, 0, 1) or p['auto_energy'] not in (True, False):
+            raise ValueError('界面陷阱类型或能级模式无效')
+        if p['Nt'] > 0 and p['Cn']+p['Cp'] == 0:
+            raise ValueError('界面缺陷开启时，电子和空穴捕获系数不能同时为零；关闭请设 Nt=0')
+        interface_energy(left, right)
     for key, a, t in (('left', layers[0], 0.), ('right', layers[-1], 1.)):
         p = profile(a, [t])
         if not p['chi'][0] <= s[key] <= p['chi'][0]+p['Eg'][0]:
@@ -197,6 +227,7 @@ def _reverse_for_illumination(layers, settings):
         if i > 0:
             for key in ('transfer_n', 'transfer_p'):
                 a[key] = layers[i-1][key]
+            a['interface'] = deepcopy(interface_parameters(layers[i-1]))
         reversed_layers.append(a)
     s = deepcopy(settings)
     s['left'], s['right'] = s['right'], s['left']
@@ -252,6 +283,9 @@ def write_inputs(folder, layers, settings):
     (folder/'simulation_setup.txt').write_text(setup, encoding='ascii')
     for i, a in enumerate(pieces):
         nt = a['Nt']*1e6
+        inter = interface_parameters(a)
+        real_interface = not a['virtual_right'] and i < len(pieces)-1
+        trap_energy = interface_energy(a, pieces[i+1]) if real_interface else inter['Et']
         # SimSS assigns mu = dx * nu / Vt at every layer interface.
         # At numerical cuts, choose nu so mu equals the unchanged bulk value.
         # User transfer speeds apply only to real material boundaries.
@@ -263,7 +297,10 @@ def write_inputs(folder, layers, settings):
             N_c=a['Nc']*1e6, N_D=a['Nd']*1e6, N_A=a['Na']*1e6,
             mu_n=a['mun']*1e-4, mu_p=a['mup']*1e-4,
             nu_int_n=vn, nu_int_p=vp,
-            N_t_int=0, N_anion=0, N_cation=0, mu_anion=0, mu_cation=0, ionsMayEnter=0,
+            N_t_int=inter['Nt']*1e4 if real_interface else 0,
+            E_t_int=trap_energy, C_n_int=inter['Cn']*1e-6, C_p_int=inter['Cp']*1e-6,
+            intTrapType=inter['trap_type'], intTrapFile='none',
+            N_anion=0, N_cation=0, mu_anion=0, mu_cation=0, ionsMayEnter=0,
             G_ehp=0 if spectral else s['G']*1e6 if a.get('absorber') else 0,
             nkLayer=f'nk_layer_{i+1}.txt' if spectral else 'none',
             layerGen=int(bool(a.get('absorber'))), k_direct=a['B']*1e-6,
@@ -325,45 +362,57 @@ def calculate_metrics(voltage, current, pin):
     return v, j, metrics, warnings
 
 
-def run_simulation(layers, settings, cancel=None):
-    validate_device(layers, settings)
+def _run_engine(folder, settings, cancel=None, started=None):
+    """Execute one native run; never return partial or nonfinite output."""
+    if cancel is not None and cancel.is_set():
+        raise SimulationCancelled('模拟已取消')
     exe = ENGINE_DIR / ('simss.exe' if sys.platform == 'win32' else 'simss')
     if not exe.is_file():
         raise RuntimeError(f'未找到 SimSS {ENGINE_VERSION} 求解器：{exe}')
+    started = time.monotonic() if started is None else started
+    if time.monotonic()-started > settings['timeout']:
+        raise RuntimeError('模拟总时长超过超时设置')
+    process = subprocess.Popen([str(exe), 'simulation_setup.txt'], cwd=folder,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
+    try:
+        while True:
+            try:
+                output, _ = process.communicate(timeout=.2)
+                break
+            except subprocess.TimeoutExpired:
+                if cancel is not None and cancel.is_set():
+                    raise SimulationCancelled('模拟已取消')
+                if time.monotonic()-started > settings['timeout']+5:
+                    raise RuntimeError('SimSS 计算超时；请减少扫描点数或调整器件参数。')
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate()
+    log_path = Path(folder)/'log.txt'
+    log = log_path.read_text(encoding='utf-8', errors='replace') if log_path.exists() else ''
+    console = output.decode('utf-8', errors='replace')
+    if process.returncode != 0:
+        raise RuntimeError(f'SimSS 未完成计算（退出码 {process.returncode}），未采用部分曲线。\n'+(console or log)[-3500:])
+    data_path = Path(folder)/'JV.dat'
+    if not data_path.exists():
+        raise RuntimeError('SimSS 未生成 J–V 文件。\n'+(console or log)[-2000:])
+    data = np.atleast_1d(np.genfromtxt(data_path, names=True))
+    if not {'Vext', 'Jext', 'errJ'}.issubset(data.dtype.names or ()):
+        raise RuntimeError('SimSS 输出列不匹配，要求 Vext、Jext、errJ。')
+    if not np.all(np.isfinite([data['Vext'], data['Jext'], data['errJ']])):
+        raise RuntimeError('SimSS 电流或收敛误差包含无效数值')
+    if cancel is not None and cancel.is_set():
+        raise SimulationCancelled('模拟已取消')
+    return data, log
+
+
+def run_simulation(layers, settings, cancel=None):
+    validate_device(layers, settings)
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix='bandtool_simss_') as folder:
         mesh = write_inputs(folder, layers, settings)
-        if cancel is not None and cancel.is_set():
-            raise SimulationCancelled('模拟已取消')
-        process = subprocess.Popen([str(exe), 'simulation_setup.txt'], cwd=folder,
-                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
-        try:
-            while True:
-                try:
-                    output, _ = process.communicate(timeout=.2)
-                    break
-                except subprocess.TimeoutExpired:
-                    if cancel is not None and cancel.is_set():
-                        raise SimulationCancelled('模拟已取消')
-                    if time.monotonic()-started > settings['timeout']+5:
-                        raise RuntimeError('SimSS 计算超时；请减少扫描点数或调整器件参数。')
-        finally:
-            if process.poll() is None:
-                process.kill()
-                process.communicate()
-        log_path = Path(folder)/'log.txt'
-        log = log_path.read_text(encoding='utf-8', errors='replace') if log_path.exists() else ''
-        console = output.decode('utf-8', errors='replace')
-        if process.returncode != 0:
-            raise RuntimeError(f'SimSS 未完成计算（退出码 {process.returncode}），未采用部分曲线。\n'
-                               + (console or log)[-3500:])
-        data_path = Path(folder)/'JV.dat'
-        if not data_path.exists():
-            raise RuntimeError('SimSS 未生成 J–V 文件。\n'+(console or log)[-2000:])
-        data = np.atleast_1d(np.genfromtxt(data_path, names=True))
-        if not {'Vext', 'Jext', 'errJ'}.issubset(data.dtype.names or ()):
-            raise RuntimeError('SimSS 输出列不匹配，要求 Vext、Jext、errJ。')
+        data, log = _run_engine(folder, settings, cancel, started)
         v, j, metrics, warnings = calculate_metrics(data['Vext'], -data['Jext']/10, settings['pin'])
         if mesh['sublayers'] > len(layers):
             warnings.append(f"渐变层已离散为 {mesh['sublayers']} 个总子层；建议增加分段数比较结果稳定性。")
@@ -393,8 +442,11 @@ def run_simulation(layers, settings, cancel=None):
             warnings.append(f"光生计算波段 {optical['settings']['wavelength_min']:g}–{optical['settings']['wavelength_max']:g} nm；效率分母采用完整入射光谱 {settings['pin']:g} mW/cm²。")
             if any(snap['source']['kind'] == 'builtin' for snap in optical['nk_snapshots']+optical['boundary_nk_snapshots']):
                 warnings.append('部分光学层使用内置示例 n,k，请按实际材料替换。')
-            if mesh['sublayers'] > len(layers):
-                warnings.append('当前渐变为电学渐变，各原始材料层的 n,k 沿厚度保持相同。')
+            linked = any(optical_model(a)['mode'] == 'edge' for a in layers)
+            if linked:
+                warnings.append('吸收边随局部 Eg（含电学渐变子层）近似联动，n 保持原谱；不是实测组分光学模型。')
+            if mesh['sublayers'] > len(layers) and any(optical_model(a)['mode'] == 'fixed' and is_graded(a) for a in layers):
+                warnings.append('部分电学渐变层使用固定 n,k，光学常数沿厚度保持相同。')
         else:
             generated = 1.602176634e-19*settings['G']*sum(a['thickness']*1e-7 for a in layers if a.get('absorber'))*1e3
         if metrics['Jsc'] is not None and metrics['Jsc'] > generated*1.01+1e-5:
@@ -409,4 +461,146 @@ def run_simulation(layers, settings, cancel=None):
                     max_current_error=float(np.max(data['errJ'])),
                     relative_current_error=relative_error,
                     layers=deepcopy(layers), settings=dict(settings), log=log,
-                    engine=ENGINE_VERSION, engine_build=ENGINE_BUILD, mesh=mesh, optics=optical)
+                    engine=ENGINE_VERSION, engine_build=ENGINE_BUILD, mesh=mesh, optics=optical,
+                    losses=extract_losses(data, mesh, layers, settings))
+
+
+def extract_losses(data, mesh, layers, settings):
+    """Use native integrated currents, not a reconstructed SRH approximation."""
+    order = np.argsort(data['Vext'])
+    size = len(data)
+    components = {k: np.zeros((len(layers), size)) for k in ('photo', 'bulk', 'direct')}
+    interfaces = []
+    for i, piece in enumerate(mesh['pieces']):
+        parent = piece['parent_index']
+        if mesh['mirrored']:
+            parent = len(layers)-1-parent
+        for key, native in [('photo', 'Jphoto'), ('bulk', 'Jbulk'), ('direct', 'Jdir')]:
+            components[key][parent] += data[f'{native}L{i+1}'][order]/10
+        if not piece['virtual_right'] and i < mesh['sublayers']-1:
+            left = parent-1 if mesh['mirrored'] else parent
+            interfaces.append(dict(left_index=left, name=layers[left]['name']+' / '+layers[left+1]['name'],
+                                   current=(data[f'JintL{i+1}L{i+2}'][order]/10).tolist()))
+    interfaces.sort(key=lambda a: a['left_index'])
+    totals = {k: a.sum(axis=0) for k, a in components.items()}
+    totals['interface'] = sum((np.asarray(a['current']) for a in interfaces), np.zeros(size))
+    totals['collected'] = -data['Jext'][order]/10
+    totals['shunt'] = data['JShunt'][order]/10
+    totals['residual'] = totals['photo']-totals['collected']-totals['bulk']-totals['direct']-totals['interface']-totals['shunt']
+    totals['series_power'] = totals['collected']**2*settings['rs']/1000
+    if not all(np.all(np.isfinite(a)) for a in totals.values()):
+        raise RuntimeError('损失分析输出包含无效数值')
+    return dict(voltage=data['Vext'][order].tolist(), layer_names=[a['name'] for a in layers],
+                layer_currents={k: a.tolist() for k, a in components.items()}, interfaces=interfaces,
+                **{k: a.tolist() for k, a in totals.items()},
+                units='mA/cm2 except series_power (mW/cm2)',
+                note='净复合等效电流；residual 含接触/边界及离散残差，不能当作纯接触损失；不是效率损失百分比。')
+
+
+def loss_at_voltage(result, voltage):
+    loss = result['losses']
+    v = loss['voltage']
+    if voltage is None or not v[0] <= voltage <= v[-1]:
+        raise ValueError('此工作点未被扫描覆盖，不能外推损失')
+    keys = ('photo', 'bulk', 'direct', 'interface', 'collected', 'shunt', 'residual', 'series_power')
+    return dict(voltage=float(voltage), **{k: float(np.interp(voltage, v, loss[k])) for k in keys},
+                layer_currents={k: [float(np.interp(voltage, v, a)) for a in arrays]
+                                for k, arrays in loss['layer_currents'].items()},
+                interface_currents=[float(np.interp(voltage, v, a['current'])) for a in loss['interfaces']])
+
+
+def validate_eqe(settings):
+    if get_optics(settings)['mode'] != 'spectrum':
+        raise ValueError('EQE 需要光谱 TMM 模式和各层 n,k 数据')
+    e = dict(EQE_DEFAULTS) | settings.get('eqe', {})
+    if not all(np.isfinite(e[k]) for k in EQE_DEFAULTS):
+        raise ValueError('EQE 设置须为有限数值')
+    if not 1 <= e['step_nm'] <= 100 or e['step_nm'] != round(e['step_nm']):
+        raise ValueError('EQE 波长步长须为 1–100 nm 的整数')
+    if not 1e10 <= e['photon_flux_cm2_s'] <= 1e17 or not 0 <= e['background_scale'] <= 10:
+        raise ValueError('EQE 探测光子通量须为 1e10–1e17 cm⁻²/s，背景光比例为 0–10')
+    o = get_optics(settings)
+    wave = np.arange(o['wavelength_min'], o['wavelength_max'], e['step_nm'])
+    wave = np.r_[wave, o['wavelength_max']]
+    if len(wave) > 251:
+        raise ValueError('EQE 最多 251 个波长点，请增大步长')
+    return e, wave
+
+
+def _rewrite_setup(folder, replacements):
+    path = Path(folder)/'simulation_setup.txt'
+    text = path.read_text(encoding='ascii')
+    for key, value in replacements.items():
+        value = format(value, '.16g') if isinstance(value, (int, float)) else str(value)
+        text, count = re.subn(r'(?m)^'+re.escape(key)+r'\s*=\s*[^*\r\n]*',
+                             lambda m: f'{key} = {value} ', text)
+        if count != 1:
+            raise RuntimeError('SimSS 模板缺少参数 '+key)
+    path.write_text(text, encoding='ascii')
+
+
+def run_eqe(layers, settings, cancel=None, progress=None):
+    """Differential short-circuit EQE: background + a single 1-nm photon bin.
+
+    Same method as the upstream pySIMsalabim EQE workflow, with signed response
+    and an explicit numerical-error estimate. No artificial clipping to 0..1.
+    """
+    validate_device(layers, settings)
+    eqe, wavelengths = validate_eqe(settings)
+    started = time.monotonic()
+    q, h, c = 1.602176634e-19, 6.62607015e-34, 299792458.
+    denominator = q*eqe['photon_flux_cm2_s']*1e3  # mA/cm2
+    with tempfile.TemporaryDirectory(prefix='pds_eqe_') as folder:
+        mesh = write_inputs(folder, layers, settings)
+        optical = mesh.pop('optical')
+        o = get_optics(settings)
+        grid = np.arange(o['wavelength_min'], o['wavelength_max']+1.)
+        spectrum = np.asarray(optical['spectrum_nm_W_m2_nm'])
+        base = np.interp(grid, spectrum[:, 0], spectrum[:, 1])*1e9*eqe['background_scale']
+        _rewrite_setup(folder, dict(Vmin=0, Vmax=0, Vstep=.01, outputRatio=1, varFile='OpticalProfile.dat'))
+
+        def solve_spectrum(irradiance):
+            # Match the native rounded wavelength grid exactly: tiny positive
+            # coordinate errors can make its linear interpolator miss a spike.
+            np.savetxt(Path(folder)/'spectrum.txt', np.column_stack([grid*1e-9, irradiance]),
+                       fmt=['%.9e', '%.16e'], header='lambda I', comments='')
+            data, _ = _run_engine(folder, settings, cancel, started)
+            if len(data) != 1 or abs(data['Vext'][0]) > 1e-10:
+                raise RuntimeError('EQE 短路工作点输出不匹配')
+            p = np.atleast_1d(np.genfromtxt(Path(folder)/'OpticalProfile.dat', names=True))
+            if len(p) != mesh['effective_points']+2 or not np.all(np.isfinite(p['G_ehp'])):
+                raise RuntimeError('EQE 光生分布不完整')
+            return -float(data['Jext'][0])/10, float(data['errJ'][0])/10, p
+
+        if progress:
+            progress(0, len(wavelengths))
+        baseline, base_error, base_profile = solve_spectrum(base)
+        responses, absorption, noise = [], [], []
+        for i, wavelength in enumerate(wavelengths):
+            modified = base.copy()
+            index = int(round(wavelength-grid[0]))
+            # Native TMM sums 1-nm rectangular bins, including both endpoints.
+            modified[index] += eqe['photon_flux_cm2_s']*1e4*h*c/(wavelength*1e-9)/1e-9
+            current, error, p = solve_spectrum(modified)
+            responses.append((current-baseline)/denominator)
+            absorption.append(float(q*integrate(p['G_ehp']-base_profile['G_ehp'], p['x'])/10/denominator))
+            noise.append((error+base_error)/denominator)
+            if progress:
+                progress(i+1, len(wavelengths))
+        responses, absorption, noise = map(np.asarray, (responses, absorption, noise))
+        if not np.all(np.isfinite([responses, absorption, noise])):
+            raise RuntimeError('EQE 结果包含无效数值')
+        photon_density = np.interp(grid, spectrum[:, 0], spectrum[:, 1])*grid*1e-9/(h*c)
+        weighted = float(q*integrate(np.interp(grid, wavelengths, responses)*photon_density, grid)/10)
+        warnings = ['短路微分 EQE：背景光上叠加 1 nm 探测光；请比较更小通量与更细波长步长。',
+                    '光谱加权电流为微分响应参考，非线性收集时不保证等于 Jsc；不对 EQE 数值强行截断。']
+        if np.max(noise) > .01:
+            warnings.append('部分波长的数值误差估计超过 1 个百分点；请调整探测通量或网格。')
+        if np.min(responses) < -.01 or np.max(responses) > 1.01:
+            warnings.append('EQE 出现负值或超过 100%，请检查注入、增益及数值收敛。')
+        return dict(kind='eqe', wavelength_nm=wavelengths.tolist(), EQE=responses.tolist(),
+                    active_absorptance=absorption.tolist(), numerical_error_estimate=noise.tolist(),
+                    baseline_Jsc=baseline, weighted_current_mA_cm2=weighted, eqe_settings=eqe,
+                    layers=deepcopy(layers), settings=deepcopy(settings), optics=optical,
+                    elapsed=time.monotonic()-started, engine=ENGINE_VERSION, engine_build=ENGINE_BUILD,
+                    warnings=warnings, mesh=mesh)

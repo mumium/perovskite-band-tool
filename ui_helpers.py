@@ -14,7 +14,7 @@ def configure_theme(root):
     style.configure('TLabel', background='#ffffff')
     style.configure('TCheckbutton', background='#ffffff', padding=(2, 3))
     style.map('TCheckbutton', background=[('active', '#f0f6f8')])
-    style.configure('TButton', width=0, padding=(10, 7), background='#f3f6fa', bordercolor='#d6e0e8', relief='flat')
+    style.configure('TButton', width=0, padding=(10, 7), background='#f3f6fa', bordercolor='#d6e0e8', relief='flat', shiftrelief=0)
     style.map('TButton', background=[('active', '#e3edf2')], foreground=[('disabled', '#93a3b1')])
     style.configure('Accent.TButton', font=('Microsoft YaHei', 11, 'bold'), background='#087e8b',
                     foreground='white', padding=(16, 10), bordercolor='#087e8b')
@@ -42,7 +42,10 @@ def configure_theme(root):
                    children=[('Notebook.label', dict(sticky='nswe'))]))]))]
     for name in ('TNotebook.Tab', 'Main.TNotebook.Tab'):
         style.layout(name, tab_layout)
-        style.map(name, expand=[('selected', (0, 0, 0, 0))])
+        padding = (22, 9) if name == 'Main.TNotebook.Tab' else (12, 7)
+        # clam otherwise substitutes smaller padding for the selected tab.
+        style.map(name, padding=[('selected', padding), ('!selected', padding)],
+                  expand=[('selected', (0, 0, 0, 0))])
     checks = []
     for selected in (False, True):
         image = Image.new('RGBA', (18, 18))

@@ -19,9 +19,46 @@ NK_LIBRARY = {'PTAA': 'nk_PTAA.txt', 'MAPI': 'nk_MAPI.txt', 'C60': 'nk_C60_1.txt
               'SiO2': 'nk_SiO2.txt', 'Air': 'nk_Air.txt'}
 OPTICS_DEFAULTS = dict(mode='manual', illumination='left', wavelength_min=300., wavelength_max=800.,
                        spectrum={'kind': 'builtin', 'name': 'AM1.5G'},
-                       substrate={'kind': 'builtin', 'name': 'SiO2'},
-                       tco={'kind': 'builtin', 'name': 'ITO'}, tco_thickness=50.,
-                       back={'kind': 'builtin', 'name': 'Au'}, back_thickness=100.)
+                       substrate={'kind': 'builtin', 'name': 'ITO'},
+                       tco={'kind': 'builtin', 'name': 'ITO'}, tco_thickness=200.,
+                       back={'kind': 'builtin', 'name': 'Ag'}, back_thickness=100.)
+HC_EV_NM = 1239.8419843320026
+
+
+def optical_model(layer):
+    # Old projects keep measured/fixed nk unless explicitly opting in.
+    return dict(mode='fixed', reference_gap=layer['Eg']) | layer.get('optical_model', {})
+
+
+def effective_nk(layer, wavelengths):
+    """Basic edge model: remap alpha(E), anchor the source UV end; keep n fixed.
+
+    The reference gap and local electrical gap determine the optical edge.
+    This is explicitly an approximation, not a material/composition model.
+    """
+    raw = nk_table(layer['optical_nk'])
+    wave = np.asarray(wavelengths, dtype=float)
+    if wave.min() < raw[0, 0]-1e-6 or wave.max() > raw[-1, 0]+1e-6:
+        raise ValueError(layer['name']+' 的 n,k 未覆盖计算波段，不能外推')
+    n = np.interp(wave, raw[:, 0], raw[:, 1])
+    model = optical_model(layer)
+    if model['mode'] == 'fixed':
+        k = np.interp(wave, raw[:, 0], raw[:, 2])
+    elif model['mode'] == 'edge':
+        ref, gap = model['reference_gap'], layer['Eg']
+        emin, emax = HC_EV_NM/raw[-1, 0], HC_EV_NM/raw[0, 0]
+        if not np.isfinite(ref) or not emin <= ref < emax or not 0 < gap < emax:
+            raise ValueError(layer['name']+'：参考 Eg 须落在 n,k 能量覆盖范围内，当前 Eg 须小于最高覆盖能量')
+        energy = HC_EV_NM/wave
+        above = energy >= gap
+        k = np.zeros_like(wave)
+        query_energy = ref+(energy[above]-gap)*(emax-ref)/(emax-gap)
+        query_wave = np.clip(HC_EV_NM/query_energy, raw[0, 0], raw[-1, 0])
+        alpha = 4*np.pi*np.interp(query_wave, raw[:, 0], raw[:, 2])/(query_wave*1e-9)
+        k[above] = alpha*wave[above]*1e-9/(4*np.pi)
+    else:
+        raise ValueError('未知的带隙吸收联动模式')
+    return np.column_stack([wave, n, k])
 
 
 def get_optics(settings):
@@ -126,6 +163,10 @@ def validate_optics(layers, settings):
         a = nk_table(spec)
         if lo < a[0, 0]-1e-6 or hi > a[-1, 0]+1e-6:
             raise ValueError(f'{name} 的 n,k 仅覆盖 {a[0,0]:g}–{a[-1,0]:g} nm；请缩小波段或导入覆盖完整波段的数据。')
+    from physics import profile
+    for a in layers:
+        for gap in profile(a, [0., 1.])['Eg']:
+            effective_nk(dict(a, Eg=float(gap)), [lo, hi])
 
 
 def prepare_optical_files(folder, pieces, settings):
@@ -146,7 +187,7 @@ def prepare_optical_files(folder, pieces, settings):
         si = np.column_stack([grid, np.interp(grid, scaled[:, 0], scaled[:, 1])])
     si[:, 0] *= 1e-9
     si[:, 1] *= 1e9
-    np.savetxt(folder/'spectrum.txt', si, header='lambda I', comments='')
+    np.savetxt(folder/'spectrum.txt', si, fmt=['%.9e', '%.16e'], header='lambda I', comments='')
     boundary_snapshots = []
     for filename, spec in [('substrate.txt', o['substrate']), ('back.txt', o['back'])]+(
             [('tco.txt', o['tco'])] if o['tco_thickness'] > 0 else []):
@@ -155,16 +196,19 @@ def prepare_optical_files(folder, pieces, settings):
                                        sha256=sha256(a.astype('<f8').tobytes()).hexdigest()))
         grid = np.arange(o['wavelength_min'], o['wavelength_max']+1., 1.)
         si_nk = np.column_stack([grid*1e-9, np.interp(grid, a[:, 0], a[:, 1]), np.interp(grid, a[:, 0], a[:, 2])])
-        np.savetxt(folder/filename, si_nk, header='lambda n k', comments='')
+        np.savetxt(folder/filename, si_nk, fmt=['%.9e', '%.16e', '%.16e'], header='lambda n k', comments='')
     snapshots = []
     for i, p in enumerate(pieces):
         a = nk_table(p['optical_nk'])
-        snapshots.append(dict(parent_index=p['parent_index'], name=p['name'],
-                              source=deepcopy(p['optical_nk']), values=a.tolist(),
-                              sha256=sha256(a.astype('<f8').tobytes()).hexdigest()))
         grid = np.arange(o['wavelength_min'], o['wavelength_max']+1., 1.)
-        si = np.column_stack([grid*1e-9, np.interp(grid, a[:, 0], a[:, 1]), np.interp(grid, a[:, 0], a[:, 2])])
-        np.savetxt(folder/f'nk_layer_{i+1}.txt', si, header='lambda n k', comments='')
+        effective = effective_nk(p, grid)
+        snapshots.append(dict(parent_index=p['parent_index'], name=p['name'], local_gap_eV=p['Eg'], optical_model=optical_model(p),
+                              source=deepcopy(p['optical_nk']), values=a.tolist(),
+                              effective_values=effective.tolist(),
+                              sha256=sha256(a.astype('<f8').tobytes()).hexdigest()))
+        si = effective.copy()
+        si[:, 0] *= 1e-9
+        np.savetxt(folder/f'nk_layer_{i+1}.txt', si, fmt=['%.9e', '%.16e', '%.16e'], header='lambda n k', comments='')
     lo, hi = o['wavelength_min'], o['wavelength_max']
     wavelengths = np.r_[lo, raw[(raw[:, 0] > lo) & (raw[:, 0] < hi), 0], hi]
     modelled = float(integrate(np.interp(wavelengths, scaled[:, 0], scaled[:, 1]), wavelengths))/10

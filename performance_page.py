@@ -15,10 +15,11 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from physics import FIELDS, layer
 from ui_helpers import ScrollableFrame, FlowToolbar
 from optics import (NK_LIBRARY, OPTICS_DEFAULTS, get_optics, default_nk,
-                    nk_table, read_csv, spectrum_table)
+                    nk_table, read_csv, spectrum_table, optical_model)
 from performance import (DEFAULT_SETTINGS, EXTRA_FIELDS, ENGINE_VERSION,
                          SimulationCancelled, import_layers, run_simulation,
-                         validate_device)
+                         validate_device, INTERFACE_DEFAULTS, interface_parameters, EQE_DEFAULTS,
+                         run_eqe, loss_at_voltage, validate_eqe)
 
 
 class PerformancePage(ttk.Frame):
@@ -30,6 +31,8 @@ class PerformancePage(ttk.Frame):
         self.loading = True
         self.result = None
         self.previous_result = None
+        self.eqe_result = None
+        self.previous_eqe = None
         self.dirty = False
         self.running = False
         self.closed = False
@@ -44,6 +47,7 @@ class PerformancePage(ttk.Frame):
             button = actions.button(title, command)
             self.input_widgets.append(button)
         self.run_button = actions.button('▶ 运行 J–V 模拟', self.run, style='Accent.TButton')
+        self.eqe_button = actions.button('运行 EQE', self.run_eqe)
         self.cancel_button = actions.button('取消', self.cancel, state='disabled')
         self.export_buttons = [actions.menu('导出结果', [('当前曲线 CSV', self.export_csv),
                                   ('完整结果 JSON', self.export_result), ('当前图像 PNG / SVG', self.export_image)], state='disabled')]
@@ -78,7 +82,7 @@ class PerformancePage(ttk.Frame):
         layer_tabs = ttk.Notebook(left)
         layer_tabs.pack(fill='both', expand=True)
         self.parameter_scroll = ScrollableFrame(layer_tabs, width=345)
-        layer_tabs.add(self.parameter_scroll, text='材料参数')
+        layer_tabs.add(self.parameter_scroll, text='材料')
         form = self.parameter_scroll.content
         self.vars = {}
         for i, (key, label, unit) in enumerate([('name', '材料名称', '')]+FIELDS+EXTRA_FIELDS):
@@ -99,7 +103,7 @@ class PerformancePage(ttk.Frame):
                   foreground='#526779').grid(row=len(self.vars)+1, column=0, columnspan=3, sticky='w')
 
         grading_scroll = ScrollableFrame(layer_tabs, width=345)
-        layer_tabs.add(grading_scroll, text='渐变设置')
+        layer_tabs.add(grading_scroll, text='渐变')
         grading = grading_scroll.content
         ttk.Label(grading, text='方向：本层左侧 → 右侧；起点使用材料参数。', wraplength=320).pack(anchor='w', pady=5)
         for key, label in [('Eg', '带隙 Eg / eV'), ('Nd', '施主 Nd / cm⁻³'), ('Na', '受主 Na / cm⁻³')]:
@@ -137,7 +141,7 @@ class PerformancePage(ttk.Frame):
                   foreground='#526779', wraplength=325).pack(anchor='w', pady=6)
 
         optical_layer = ScrollableFrame(layer_tabs, width=345)
-        layer_tabs.add(optical_layer, text='光学参数')
+        layer_tabs.add(optical_layer, text='光学')
         of = optical_layer.content
         ttk.Label(of, text='本层折射率 n / 消光系数 k', font=('Microsoft YaHei', 10, 'bold')).pack(anchor='w', pady=(5, 8))
         self.nk_choice = tk.StringVar()
@@ -153,12 +157,25 @@ class PerformancePage(ttk.Frame):
         check = ttk.Checkbutton(of, text='本层吸收光产生载流子', variable=self.absorber)
         check.pack(anchor='w', pady=5)
         self.input_widgets.append(check)
-        ttk.Label(of, text='CSV：波长_nm,n,k；波长递增，n>0，k≥0。\n内置数据为示例，请按实际材料替换。\n电学渐变不会自动改变本层光学常数。', wraplength=320,
+        self.edge_mode = tk.StringVar(value='固定 n,k')
+        self.reference_gap = tk.StringVar(value='1.55')
+        for title, var, values in [('吸收与带隙联动', self.edge_mode, ['固定 n,k', '吸收边联动（近似）']),
+                                    ('原始 n,k 参考 Eg / eV', self.reference_gap, None)]:
+            ttk.Label(of, text=title).pack(anchor='w', pady=(6, 2))
+            widget = ttk.Combobox(of, textvariable=var, values=values, state='readonly') if values else ttk.Entry(of, textvariable=var)
+            widget.pack(fill='x', pady=2)
+            self.input_widgets.append(widget)
+            var.trace_add('write', self.mark_dirty)
+        ttk.Label(of, text='CSV：波长_nm,n,k；波长递增，n>0，k≥0。\n吸收边联动：局部 Eg 调整吸收边，n 保持原谱。\n参考 Eg 是原始 n,k 对应的带隙，修改材料 Eg 时不要跟着改。\n基础近似不代表真实组分光学常数；实测数据可选固定模式。', wraplength=320,
                   foreground='#805c16').pack(anchor='w', pady=8)
+
+        interface_tab = ScrollableFrame(layer_tabs, width=345)
+        layer_tabs.add(interface_tab, text='界面')
+        self.build_interface_form(interface_tab.content)
 
         self.settings_header = ttk.Frame(right)
         self.settings_header.pack(fill='x')
-        self.settings_toggle = ttk.Button(self.settings_header, text='模拟设置 ▴', command=self.toggle_settings)
+        self.settings_toggle = ttk.Button(self.settings_header, text='模拟设置 ▴', width=11, command=self.toggle_settings)
         self.settings_toggle.pack(side='left', pady=(0, 3))
         self.mode_badge = tk.StringVar(value='AM1.5G · TMM 光学耦合')
         ttk.Label(self.settings_header, textvariable=self.mode_badge, foreground='#536c7c').pack(side='left', padx=8)
@@ -213,6 +230,21 @@ class PerformancePage(ttk.Frame):
         optical_tab = ScrollableFrame(settings_tabs, width=560, height=150)
         settings_tabs.add(optical_tab, text='光谱与光学')
         self.build_optics_form(optical_tab.content)
+        eqe_tab = ScrollableFrame(settings_tabs, width=560, height=150)
+        settings_tabs.add(eqe_tab, text='EQE')
+        self.eqe_vars = {}
+        for i, (key, title, unit) in enumerate([('step_nm', '波长步长', 'nm'),
+                    ('photon_flux_cm2_s', '探测光子通量', 'cm⁻²/s'), ('background_scale', '背景光比例', '0 为暗态，1 为当前光谱')]):
+            ttk.Label(eqe_tab.content, text=title).grid(row=i, column=0, sticky='w', padx=5, pady=4)
+            var = tk.StringVar(value=f'{EQE_DEFAULTS[key]:g}')
+            self.eqe_vars[key] = var
+            entry = ttk.Entry(eqe_tab.content, textvariable=var, width=16)
+            entry.grid(row=i, column=1, padx=5)
+            ttk.Label(eqe_tab.content, text=unit).grid(row=i, column=2, sticky='w')
+            self.input_widgets.append(entry)
+            var.trace_add('write', self.mark_dirty)
+        ttk.Label(eqe_tab.content, text='短路微分 EQE；使用光学波段，逐波长叠加 1 nm 探测光。\n计算包含输运/复合；EQE 单独保存，切回 J–V 查看其指标。',
+                  foreground='#805c16').grid(row=3, column=0, columnspan=3, sticky='w', padx=5, pady=5)
         summary = ttk.Frame(right, padding=(4, 6))
         self.summary = summary
         summary.pack(fill='x')
@@ -236,17 +268,25 @@ class PerformancePage(ttk.Frame):
         self.full_scan = tk.BooleanVar(value=False)
         self.plot_view = tk.StringVar(value='J–V 曲线')
         choice = ttk.Combobox(plot_controls, textvariable=self.plot_view, state='readonly',
-                              values=['J–V 曲线', '入射光谱', '光生分布'], width=11)
+                              values=['J–V 曲线', '入射光谱', '光生分布', '损失分析', 'EQE'], width=11)
         plot_controls.add(choice)
         choice.bind('<<ComboboxSelected>>', lambda e: self.plot())
         plot_controls.add(ttk.Checkbutton(plot_controls, text='完整扫描', variable=self.full_scan, command=self.plot))
         self.show_previous = tk.BooleanVar(value=True)
         plot_controls.add(ttk.Checkbutton(plot_controls, text='上次结果', variable=self.show_previous, command=self.plot))
         plot_controls.button('清除对照', self.clear_comparison)
+        self.loss_point = tk.StringVar(value='最大功率点')
+        self.loss_choice = ttk.Combobox(plot_controls, textvariable=self.loss_point,
+                                       values=['短路', '最大功率点', '开路'], width=10, state='disabled')
+        plot_controls.add(self.loss_choice)
+        self.loss_choice.bind('<<ComboboxSelected>>', lambda e: self.plot())
+        self.analysis_note = tk.StringVar()
+        self.analysis_label = ttk.Label(right, textvariable=self.analysis_note, wraplength=800, foreground='#536c7c')
         self.fig = Figure(figsize=(7, 4), dpi=100)
         self.fig.set_layout_engine('tight', pad=1.2)
         self.ax = self.fig.add_subplot(111)
         self.canvas = FigureCanvasTkAgg(self.fig, master=right)
+        self.canvas.get_tk_widget().bind('<Configure>', self.resize_plot, add='+')
         self.canvas.get_tk_widget().configure(width=250, height=140)
         self.canvas.get_tk_widget().pack(fill='both', expand=True)
         self.toolbar = NavigationToolbar2Tk(self.canvas, right, pack_toolbar=False)
@@ -270,6 +310,40 @@ class PerformancePage(ttk.Frame):
         self.loading = False
         self.update_optical_mode()
         self.plot()
+
+    def build_interface_form(self, form):
+        self.interface_note = tk.StringVar()
+        ttk.Label(form, textvariable=self.interface_note, wraplength=320, foreground='#536c7c').grid(row=0, column=0, columnspan=3, sticky='w', pady=7)
+        self.interface_vars = {}
+        for i, (key, title, unit) in enumerate([('Nt', '界面缺陷浓度', 'cm⁻²'), ('Et', '陷阱真空以下深度', 'eV'),
+                                               ('Cn', '电子捕获系数', 'cm³/s'), ('Cp', '空穴捕获系数', 'cm³/s')], 1):
+            ttk.Label(form, text=title).grid(row=i, column=0, sticky='w', pady=5)
+            var = tk.StringVar(value=f'{INTERFACE_DEFAULTS[key]:g}')
+            self.interface_vars[key] = var
+            entry = ttk.Entry(form, textvariable=var, width=12)
+            entry.grid(row=i, column=1, padx=4)
+            ttk.Label(form, text=unit).grid(row=i, column=2, sticky='w')
+            self.input_widgets.append(entry)
+            if key == 'Et':
+                self.interface_energy_entry = entry
+            var.trace_add('write', self.mark_dirty)
+        self.interface_auto = tk.BooleanVar(value=True)
+        check = ttk.Checkbutton(form, text='能级自动取两侧共同禁带中点', variable=self.interface_auto,
+                                command=self.update_interface_controls)
+        check.grid(row=5, column=0, columnspan=3, sticky='w', pady=5)
+        self.input_widgets.append(check)
+        self.interface_auto.trace_add('write', self.mark_dirty)
+        self.interface_type = tk.StringVar(value='中性')
+        ttk.Label(form, text='陷阱类型').grid(row=6, column=0, sticky='w', pady=5)
+        combo = ttk.Combobox(form, textvariable=self.interface_type, values=['中性', '受主', '施主'], state='readonly', width=12)
+        combo.grid(row=6, column=1, padx=4)
+        self.input_widgets.append(combo)
+        self.interface_type.trace_add('write', self.mark_dirty)
+        ttk.Label(form, text='设置本层与右侧材料的真实界面。\nNt=0 关闭界面陷阱；最后一层忽略此设置。\n捕获系数独立于体寿命，单位 cm³/s。\n自动能级会随两侧能级更新；手动深度须在共同禁带内。\n数值渐变子层之间不添加陷阱。',
+                  wraplength=320, foreground='#805c16').grid(row=7, column=0, columnspan=3, sticky='w', pady=7)
+
+    def update_interface_controls(self):
+        self.interface_energy_entry.configure(state='disabled' if self.running or self.interface_auto.get() else 'normal')
 
     def build_optics_form(self, form):
         self.optical_mode = tk.StringVar(value='光谱 · TMM')
@@ -413,24 +487,37 @@ class PerformancePage(ttk.Frame):
                 widget.configure(wraplength=max(300, event.width-24))
 
     def resize_right(self, event):
-        for widget in (self.mpp_label, self.comparison_label):
+        for widget in (self.mpp_label, self.comparison_label, self.analysis_label):
             widget.configure(wraplength=max(200, event.width-20))
         compact = event.height < 500
         if compact != self.compact:
             self.compact = compact
             self.toggle_settings(not compact)
 
+    def loss_row_limit(self):
+        return max(2, min(8, (self.canvas.get_tk_widget().winfo_height()-100)//24))
+
+    def resize_plot(self, event):
+        # The wrapping toolbar briefly leaves a tiny canvas during first map.
+        # Avoid layout warnings then, and use smaller margins on short screens.
+        self.fig.set_layout_engine('tight' if event.height >= 100 else None,
+                                   **({'pad': .5 if event.height < 230 else 1.2} if event.height >= 100 else {}))
+        if self.plot_view.get() == '损失分析' and self.loss_row_limit() != getattr(self, 'loss_max_rows', None):
+            self.after_idle(self.plot)
+
     def toggle_settings(self, visible=None):
         visible = not self.settings_visible if visible is None else visible
         self.settings_visible = visible
         if visible:
-            self.settings_tabs.pack(fill='x', before=self.summary)
+            before = self.summary if self.summary.winfo_manager() == 'pack' else self.plot_controls
+            self.settings_tabs.pack(fill='x', before=before)
         else:
             self.settings_tabs.pack_forget()
         self.settings_toggle.configure(text='模拟设置 ▴' if visible else '模拟设置 ▾')
 
     def clear_comparison(self):
         self.previous_result = None
+        self.previous_eqe = None
         self.comparison_text.set('')
         self.comparison_label.pack_forget()
         self.plot()
@@ -459,6 +546,17 @@ class PerformancePage(ttk.Frame):
         self.nk_combo.configure(values=list(NK_LIBRARY)+([spec['name']] if spec['kind'] == 'custom' else []))
         self.nk_choice.set(spec['name'])
         self.update_nk_note()
+        model = optical_model(a)
+        self.edge_mode.set('吸收边联动（近似）' if model['mode'] == 'edge' else '固定 n,k')
+        self.reference_gap.set(f"{model['reference_gap']:g}")
+        inter = interface_parameters(a)
+        for key, var in self.interface_vars.items():
+            var.set(f'{inter[key]:g}')
+        self.interface_auto.set(inter['auto_energy'])
+        self.interface_type.set({0: '中性', -1: '受主', 1: '施主'}[inter['trap_type']])
+        self.interface_note.set('最后一层：无右侧材料界面，以下设置不参与计算。' if self.index == len(self.layers)-1 else
+                                a['name']+' → '+self.layers[self.index+1]['name'])
+        self.update_interface_controls()
         self.loading = previous
 
     def commit_layer(self):
@@ -469,6 +567,15 @@ class PerformancePage(ttk.Frame):
             except ValueError:
                 raise ValueError(f'{key} 请输入数值，支持科学计数法') from None
         a['absorber'] = self.absorber.get()
+        try:
+            a['optical_model'] = dict(mode='edge' if self.edge_mode.get() == '吸收边联动（近似）' else 'fixed',
+                                      reference_gap=float(self.reference_gap.get()))
+            a['interface'] = {key: float(var.get()) for key, var in self.interface_vars.items()}
+            a['interface'].update(auto_energy=self.interface_auto.get(), trap_type={'中性': 0, '受主': -1, '施主': 1}[self.interface_type.get()])
+        except (ValueError, KeyError):
+            raise ValueError('参考带隙和界面参数请输入有效数值') from None
+        if not np.isfinite(a['optical_model']['reference_gap']) or any(not np.isfinite(a['interface'][k]) for k in self.interface_vars):
+            raise ValueError('参考带隙与界面参数须为有限数值')
         # Keep previously uniform endpoint metadata uniform when editing starts.
         for key in ('Eg', 'Nd', 'Na'):
             if a.get(key+'_mode', '均匀') == '均匀':
@@ -485,6 +592,10 @@ class PerformancePage(ttk.Frame):
             raise ValueError('模拟设置请输入有效数值，支持科学计数法') from None
         s['left_anode'] = int(self.left_anode.get())
         s['optics'] = self.collect_optics()
+        try:
+            s['eqe'] = {key: float(var.get()) for key, var in self.eqe_vars.items()}
+        except ValueError:
+            raise ValueError('EQE 设置请输入有效数值') from None
         validate_device(self.layers, s)
         self.refresh_list()
         return deepcopy(self.layers), s
@@ -570,10 +681,12 @@ class PerformancePage(ttk.Frame):
         for widget in self.input_widgets:
             widget.configure(state='disabled' if running else ('readonly' if isinstance(widget, ttk.Combobox) else 'normal'))
         self.run_button.configure(state='disabled' if running else 'normal')
+        self.eqe_button.configure(state='disabled' if running else 'normal')
         self.cancel_button.configure(state='normal' if running else 'disabled')
         for button in self.export_buttons:
-            button.configure(state='normal' if self.result is not None and not running else 'disabled')
+            button.configure(state='normal' if (self.result is not None or self.eqe_result is not None) and not running else 'disabled')
         self.update_optical_mode()
+        self.update_interface_controls()
 
     def run(self):
         if self.running:
@@ -583,6 +696,7 @@ class PerformancePage(ttk.Frame):
         except Exception as e:
             messagebox.showerror('无法开始模拟', str(e), parent=self)
             return
+        self.task_kind = 'jv'
         self.set_running(True)
         if self.compact:
             self.toggle_settings(False)
@@ -605,6 +719,36 @@ class PerformancePage(ttk.Frame):
         threading.Thread(target=worker, daemon=True).start()
         self.poll_id = self.after(80, self.poll)
 
+    def run_eqe(self):
+        if self.running:
+            return
+        try:
+            layers, settings = self.collect()
+            validate_eqe(settings)
+        except Exception as e:
+            messagebox.showerror('无法开始 EQE', str(e), parent=self)
+            return
+        self.task_kind = 'eqe'
+        self.set_running(True)
+        if self.compact:
+            self.toggle_settings(False)
+        self.cancel_event = threading.Event()
+        self.status.set('正在计算 EQE 基线… J–V 与已有 EQE 结果保留至本次成功。')
+        self.progress = ttk.Progressbar(self.footer, mode='determinate')
+        self.progress.pack(fill='x', pady=3)
+        cancel = self.cancel_event
+
+        def worker():
+            try:
+                result = run_eqe(layers, settings, cancel, lambda i, n: self.events.put(('progress', (i, n))))
+                self.events.put(('eqe_result', result))
+            except SimulationCancelled as e:
+                self.events.put(('cancel', str(e)))
+            except Exception as e:
+                self.events.put(('error', str(e)))
+        threading.Thread(target=worker, daemon=True).start()
+        self.poll_id = self.after(80, self.poll)
+
     def cancel(self):
         self.cancel_event.set()
         self.status.set('正在取消计算…')
@@ -619,12 +763,31 @@ class PerformancePage(ttk.Frame):
         except queue.Empty:
             self.poll_id = self.after(80, self.poll)
             return
+        if kind == 'progress':
+            count, total = payload
+            self.progress.configure(maximum=total, value=count)
+            if not self.cancel_event.is_set():
+                self.status.set(f'EQE · {count}/{total} 个波长完成；可取消，上次成功结果保留。')
+            self.poll_id = self.after(20, self.poll)
+            return
         self.progress.stop()
         self.progress.destroy()
         self.set_running(False)
-        if kind == 'result' and not self.cancel_event.is_set():
+        if kind == 'eqe_result' and not self.cancel_event.is_set():
+            self.previous_eqe = self.eqe_result
+            self.eqe_result = payload
+            self.plot_view.set('EQE')
+            self.status.set(f"EQE 完成 · {payload['elapsed']:.2f} s · {len(payload['EQE'])} 个波长 · "
+                            f"背景比例 {payload['eqe_settings']['background_scale']:g} · 光谱加权电流参考 {payload['weighted_current_mA_cm2']:.3f} mA/cm²；J–V 结果独立保留。")
+            self.warning.set('；'.join(payload['warnings']))
+            for button in self.export_buttons:
+                button.configure(state='normal')
+            self.plot()
+        elif kind == 'result' and not self.cancel_event.is_set():
             self.previous_result = self.result
             self.result = payload
+            if self.plot_view.get() == 'EQE':
+                self.plot_view.set('J–V 曲线')
             self.dirty = False
             for key, var in self.metric_vars.items():
                 value = payload['metrics'][key]
@@ -660,10 +823,29 @@ class PerformancePage(ttk.Frame):
     def plot(self):
         ax = self.ax
         ax.clear()
+        self.analysis_label.pack_forget()
+        if self.plot_view.get() in ('EQE', '损失分析'):
+            self.summary.pack_forget()
+            self.mpp_label.pack_forget()
+            self.comparison_label.pack_forget()
+        else:
+            self.summary.pack(fill='x', before=self.plot_controls)
+            self.mpp_label.pack(anchor='w', padx=8, before=self.plot_controls)
+            if self.comparison_text.get():
+                self.comparison_label.pack(anchor='w', padx=8, before=self.plot_controls)
         ax.set(xlabel='端电压 V (V)', ylabel='输出电流密度 J (mA/cm²)')
         ax.axhline(0, color='#87929b', lw=.8)
         ax.axvline(0, color='#87929b', lw=.8)
         ax.grid(alpha=.2)
+        self.loss_choice.configure(state='readonly' if self.plot_view.get() == '损失分析' else 'disabled')
+        if self.plot_view.get() == '损失分析':
+            self.plot_losses()
+            self.canvas.draw_idle()
+            return
+        if self.plot_view.get() == 'EQE':
+            self.plot_eqe()
+            self.canvas.draw_idle()
+            return
         if self.plot_view.get() != 'J–V 曲线':
             self.plot_optics()
             self.canvas.draw_idle()
@@ -690,6 +872,69 @@ class PerformancePage(ttk.Frame):
             ax.set_title(f'稳态器件性能 · SimSS {ENGINE_VERSION}', fontsize=11)
             ax.legend(loc='best')
         self.canvas.draw_idle()
+
+    def show_analysis_note(self, text):
+        self.analysis_note.set(text)
+        self.analysis_label.pack(fill='x', padx=8, pady=3, before=self.canvas.get_tk_widget())
+
+    def plot_losses(self):
+        ax = self.ax
+        ax.clear()
+        ax.set_xlabel('净复合等效电流 (mA/cm²)')
+        if self.result is None:
+            ax.set_title('运行 J–V 后查看逐层 / 逐界面损失', fontsize=11)
+            return
+        r = self.result
+        voltage = {'短路': 0., '最大功率点': r['metrics']['Vmp'], '开路': r['metrics']['Voc']}[self.loss_point.get()]
+        if voltage is None:
+            ax.set_title('当前扫描未确认此工作点，请扩大扫描范围', fontsize=11)
+            return
+        point = loss_at_voltage(r, voltage)
+        loss = r['losses']
+        labels = list(loss['layer_names'])+[a['name'] for a in loss['interfaces']]
+        count = len(loss['interfaces'])
+        bulk = np.r_[point['layer_currents']['bulk'], np.zeros(count)]
+        direct = np.r_[point['layer_currents']['direct'], np.zeros(count)]
+        interface = np.r_[np.zeros(len(loss['layer_names'])), point['interface_currents']]
+        self.loss_max_rows = self.loss_row_limit()
+        if len(labels) > self.loss_max_rows:
+            order = np.argsort(np.abs(bulk)+np.abs(direct)+np.abs(interface))[::-1]
+            chosen, other = order[:self.loss_max_rows-1], order[self.loss_max_rows-1:]
+            labels = [labels[i] for i in chosen]+['其余层 / 界面合计']
+            bulk, direct, interface = (np.r_[a[chosen], a[other].sum()] for a in (bulk, direct, interface))
+        y = np.arange(len(labels))
+        ax.barh(y, bulk, color='#087e8b', label='体 SRH')
+        ax.barh(y, direct, left=bulk, color='#d18b37', label='双分子')
+        ax.barh(y, interface, left=bulk+direct, color='#9871b6', label='界面 SRH')
+        ax.set_yticks(y, [a if len(a) < 24 else a[:22]+'…' for a in labels], fontsize=8)
+        ax.invert_yaxis()
+        ax.grid(axis='x', alpha=.2)
+        ax.set_title(f"{self.loss_point.get()} · {voltage:.4f} V · 净复合", fontsize=10)
+        ax.legend(loc='best', fontsize=8)
+        self.show_analysis_note(f"电流预算 / mA·cm⁻²：光生 {point['photo']:.3f} · 输出 {point['collected']:.3f} · "
+            f"体 SRH {point['bulk']:.3f} · 双分子 {point['direct']:.3f} · 界面 {point['interface']:.3f} · "
+            f"漏电 {point['shunt']:.3f} · 边界/离散残差 {point['residual']:.3f}。\n"
+            f"串联电阻耗散 {point['series_power']:.4g} mW/cm²；以上为净等效电流，不是效率损失百分比。")
+
+    def plot_eqe(self):
+        ax = self.ax
+        ax.clear()
+        ax.set(xlabel='波长 λ (nm)', ylabel='外量子效率 / %')
+        ax.grid(alpha=.2)
+        if self.eqe_result is None:
+            ax.set_title('选择光谱 TMM 模式后，点击「运行 EQE」', fontsize=11)
+            return
+        r = self.eqe_result
+        ax.plot(r['wavelength_nm'], np.asarray(r['EQE'])*100, color='#087e8b', lw=2, label='EQE（含输运与复合）')
+        ax.plot(r['wavelength_nm'], np.asarray(r['active_absorptance'])*100, color='#d18b37', ls=':', label='光生吸收参考')
+        if self.show_previous.get() and self.previous_eqe is not None:
+            p = self.previous_eqe
+            ax.plot(p['wavelength_nm'], np.asarray(p['EQE'])*100, color='#9871b6', ls='--', label='上次 EQE')
+        ax.axhline(100, lw=.7, color='#9fb1bd')
+        ax.set_title(f"短路微分 EQE · 背景光比例 {r['eqe_settings']['background_scale']:g}", fontsize=11)
+        ax.legend(loc='best', fontsize=8)
+        self.show_analysis_note(f"此图对应最近成功 EQE 输入；J–V 指标切回 J–V 视图查看。光谱加权电流参考 "
+            f"{r['weighted_current_mA_cm2']:.3f} mA/cm²；最大数值误差估计 {max(r['numerical_error_estimate'])*100:.3g} 个百分点。")
 
     def plot_optics(self):
         ax = self.ax
@@ -758,6 +1003,9 @@ class PerformancePage(ttk.Frame):
                 var.set(f"{data['settings'][key]:g}")
             self.left_anode.set(bool(data['settings']['left_anode']))
             self.show_optical_settings(data['settings'])
+            eqe = dict(EQE_DEFAULTS) | data['settings'].get('eqe', {})
+            for key, var in self.eqe_vars.items():
+                var.set(f'{eqe[key]:g}')
             self.show_fields()
             self.refresh_list()
             self.loading = False
@@ -768,20 +1016,39 @@ class PerformancePage(ttk.Frame):
             messagebox.showerror('打开失败', str(e), parent=self)
 
     def export_csv(self):
-        if self.result is None:
+        if self.plot_view.get() == 'EQE':
+            r = self.eqe_result
+            if r is None:
+                return
+            table = np.column_stack([r['wavelength_nm'], r['EQE'], r['active_absorptance'], r['numerical_error_estimate']])
+            header = 'wavelength_nm,EQE_fraction,active_absorptance_fraction,numerical_error_estimate_fraction'
+        elif self.result is None:
             return
-        r = self.result
-        if self.plot_view.get() == 'J–V 曲线':
+        elif self.plot_view.get() == '损失分析':
+            loss = self.result['losses']
+            keys = ['photo', 'collected', 'bulk', 'direct', 'interface', 'shunt', 'residual', 'series_power']
+            columns = [loss['voltage']]+[loss[k] for k in keys]
+            names = ['V_terminal_V']+[k+('_mW_cm2' if k == 'series_power' else '_mA_cm2') for k in keys]
+            for key in ('photo', 'bulk', 'direct'):
+                for i, a in enumerate(loss['layer_currents'][key]):
+                    columns.append(a)
+                    names.append(f'layer_{i+1}_{key}_mA_cm2')
+            for a in loss['interfaces']:
+                columns.append(a['current'])
+                names.append(f"interface_{a['left_index']+1}_mA_cm2")
+            table, header = np.column_stack(columns), ','.join(names)
+        elif self.plot_view.get() == 'J–V 曲线':
+            r = self.result
             table = np.column_stack([r['voltage'], r['current']])
             header = 'V_terminal_V,J_output_mA_cm2'
-        elif r.get('optics', {}).get('mode') != 'spectrum':
+        elif self.result.get('optics', {}).get('mode') != 'spectrum':
             messagebox.showinfo('尚无光学结果', '请运行光谱模式后导出光谱或光生分布。', parent=self)
             return
         elif self.plot_view.get() == '入射光谱':
-            table = np.asarray(r['optics']['spectrum_nm_W_m2_nm'])
+            table = np.asarray(self.result['optics']['spectrum_nm_W_m2_nm'])
             header = 'wavelength_nm,irradiance_W_m2_nm'
         else:
-            o = r['optics']
+            o = self.result['optics']
             table = np.column_stack([o['x_nm'], o['G_cm3_s'], o['layer_index']])
             header = 'x_nm,G_cm3_s,layer_index_zero_based'
         path = filedialog.asksaveasfilename(parent=self, defaultextension='.csv', filetypes=[('当前曲线', '*.csv')])
@@ -792,11 +1059,12 @@ class PerformancePage(ttk.Frame):
                 messagebox.showerror('导出失败', str(e), parent=self)
 
     def export_result(self):
-        if self.result is None:
+        result = self.eqe_result if self.plot_view.get() == 'EQE' else self.result
+        if result is None:
             return
         path = filedialog.asksaveasfilename(parent=self, defaultextension='.json', filetypes=[('完整模拟结果', '*.json')])
         if path:
-            data = {key: value.tolist() if isinstance(value, np.ndarray) else value for key, value in self.result.items()}
+            data = {key: value.tolist() if isinstance(value, np.ndarray) else value for key, value in result.items()}
             data.update(created_utc=datetime.now(timezone.utc).isoformat(), current_convention='positive delivered, mA/cm2')
             try:
                 Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
@@ -804,7 +1072,7 @@ class PerformancePage(ttk.Frame):
                 messagebox.showerror('导出失败', str(e), parent=self)
 
     def export_image(self):
-        if self.result is None:
+        if (self.eqe_result if self.plot_view.get() == 'EQE' else self.result) is None:
             return
         path = filedialog.asksaveasfilename(parent=self, defaultextension='.png', filetypes=[('PNG', '*.png'), ('SVG', '*.svg')])
         if path:

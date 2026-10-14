@@ -172,6 +172,84 @@ class PerformanceUI(unittest.TestCase):
             self.assertIn('spectrum_sha256', data['optics'])
             self.assertEqual(data['optics']['incident_power_mW_cm2'], 100)
 
+    def test_interface_edge_eqe_loss_exports_and_retained_snapshots(self):
+        p = self.page
+        p.optical_mode.set('光谱 · TMM')
+        p.settings['vmax'].set('1.24')
+        p.interface_vars['Nt'].set('1e11')
+        p.interface_type.set('受主')
+        p.commit_layer()
+        p.index = 1
+        p.show_fields()
+        self.assertEqual(p.edge_mode.get(), '吸收边联动（近似）')
+        p.vars['Eg'].set('1.7')
+        p.eqe_vars['step_nm'].set('100')
+        with tempfile.TemporaryDirectory() as folder:
+            project = Path(folder)/'project.json'
+            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(project)):
+                p.save()
+            with patch('performance_page.filedialog.askopenfilename', return_value=str(project)):
+                p.load()
+            self.assertEqual(p.layers[0]['interface']['Nt'], 1e11)
+            self.assertEqual(p.layers[0]['interface']['trap_type'], -1)
+            self.assertEqual(p.layers[1]['optical_model']['reference_gap'], 1.55)
+            self.assertEqual(float(p.eqe_vars['step_nm'].get()), 100)
+            p.run()
+            self.wait_for_run()
+            jv = p.result
+            metric = p.metric_vars['PCE'].get()
+            p.plot_view.set('损失分析')
+            p.plot()
+            self.assertIn('电流预算', p.analysis_note.get())
+            path = Path(folder)/'loss.csv'
+            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(path)):
+                p.export_csv()
+            self.assertIn('interface_1_mA_cm2', path.read_text())
+            p.run_eqe()
+            self.assertEqual(str(p.run_button['state']), 'disabled')
+            self.wait_for_run()
+            self.assertIs(p.result, jv)
+            self.assertEqual(p.metric_vars['PCE'].get(), metric)
+            self.assertEqual(p.plot_view.get(), 'EQE')
+            e = p.eqe_result
+            path = Path(folder)/'eqe.csv'
+            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(path)):
+                p.export_csv()
+            self.assertIn('EQE_fraction', path.read_text())
+            report = Path(folder)/'eqe.json'
+            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(report)):
+                p.export_result()
+            saved = json.loads(report.read_text(encoding='utf-8'))
+            self.assertEqual(saved['kind'], 'eqe')
+            self.assertEqual(saved['layers'][1]['Eg'], 1.7)
+            with patch('performance_page.run_eqe', side_effect=ValueError('failure')), patch('performance_page.messagebox.showerror'):
+                p.run_eqe()
+                self.wait_for_run()
+            self.assertIs(p.eqe_result, e)
+            self.assertIs(p.result, jv)
+            p.run_eqe()
+            p.cancel()
+            self.wait_for_run()
+            self.assertIs(p.eqe_result, e)
+
+    def test_controls_keep_geometry_when_selected_or_pressed(self):
+        nb = self.app.pages
+        def tab_spans():
+            return [str(nb.tk.call(nb._w, 'identify', 'tab', x, 25)) for x in range(480)]
+        self.app.pages.select(0)
+        self.app.update()
+        before = tab_spans()
+        self.app.pages.select(self.page)
+        self.app.update()
+        self.assertEqual(before, tab_spans())
+        b = self.page.run_button
+        size = b.winfo_reqwidth(), b.winfo_reqheight()
+        for state in ('pressed', 'focus', 'disabled'):
+            b.state((state,))
+            self.app.update_idletasks()
+            self.assertEqual(size, (b.winfo_reqwidth(), b.winfo_reqheight()))
+            b.state(('!'+state,))
+
 
 if __name__ == '__main__':
     unittest.main()
