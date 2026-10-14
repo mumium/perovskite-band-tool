@@ -19,7 +19,7 @@ from physics import (FIELDS, example, layer, solve, validate, normalize, alignme
 from analysis_views import analysis_segments, interface_offsets, sample_position
 from performance_page import PerformancePage
 from app_info import APP_NAME, APP_ENGLISH_NAME
-from ui_helpers import ScrollableFrame
+from ui_helpers import ScrollableFrame, FlowToolbar, configure_theme
 
 class App(tk.Tk):
     def __init__(self):
@@ -33,26 +33,34 @@ class App(tk.Tk):
         width=min(1320,max(900,self.winfo_screenwidth()-50))
         height=min(880,max(560,self.winfo_screenheight()-110))
         self.geometry(f'{width}x{height}'); self.minsize(900,560)
-        style=ttk.Style(self)
-        style.configure('Main.TNotebook.Tab',font=('Microsoft YaHei',12,'bold'),padding=(22,10))
+        configure_theme(self)
         self.layers=[normalize(a) for a in example()]; self.index=0; self.busy=False; self.pending=None
         self.result=None; self.snapshot=None
         self.drag=None; self.drag_history=[]; self.band_artists={}
         self.pages=ttk.Notebook(self,style='Main.TNotebook');self.pages.pack(fill='both',expand=True)
         band_page=ttk.Frame(self.pages);self.pages.add(band_page,text='能带模拟')
-        top=ttk.Frame(band_page,padding=10); top.pack(fill='x')
-        for text,cmd in [('打开参数',self.load),('保存参数',self.save),('导出参数 CSV',self.export_params),
-                         ('导出曲线 CSV',self.export_curve),('保存图片',self.export_image),
-                         ('设为对照',self.compare),('清除对照',self.clear_compare),('模型说明',self.help)]:
-            ttk.Button(top,text=text,command=cmd).pack(side='left',padx=3)
+        top=FlowToolbar(band_page,padding=(12,8)); top.pack(fill='x')
+        top.button('打开参数',self.load)
+        top.button('保存参数',self.save)
+        top.menu('导出',[('参数 CSV',self.export_params),('当前曲线 CSV',self.export_curve),('当前图像 PNG / SVG',self.export_image)])
+        top.button('设为对照',self.compare)
+        top.button('清除对照',self.clear_compare)
+        top.button('模型说明',self.help)
         body=ttk.Panedwindow(band_page,orient='horizontal'); body.pack(fill='both',expand=True,padx=10)
-        left=ttk.Frame(body,width=345); right=ttk.Frame(body); body.add(left,weight=0); body.add(right,weight=1)
+        left=ttk.Frame(body,width=350); right=ttk.Frame(body); body.add(left,weight=0); body.add(right,weight=1)
+        # Set the initial split after the notebook has assigned its actual size.
+        def initial_split(event):
+            body.unbind('<Map>')
+            self.after_idle(lambda:body.sashpos(0,350))
+        body.bind('<Map>',initial_split)
         ttk.Label(left,text='材料层（从左电极到右电极）',font=('Microsoft YaHei',11,'bold')).pack(anchor='w')
-        self.listbox=tk.Listbox(left,height=5,exportselection=False,font=('Microsoft YaHei',10))
+        self.listbox=tk.Listbox(left,height=4,exportselection=False,font=('Microsoft YaHei',10),
+                                bg='#f6f9fc',fg='#223b4b',selectbackground='#087e8b',selectforeground='white',
+                                relief='flat',highlightthickness=1,highlightbackground='#dce5ec')
         self.listbox.pack(fill='x',pady=6); self.listbox.bind('<<ListboxSelect>>',self.select)
         buttons=ttk.Frame(left); buttons.pack(fill='x')
         for text,cmd in [('添加',self.add),('删除',self.remove),('上移',lambda:self.move(-1)),('下移',lambda:self.move(1))]:
-            ttk.Button(buttons,text=text,width=7,command=cmd).pack(side='left',padx=2)
+            ttk.Button(buttons,text=text,width=5,command=cmd).pack(side='left',padx=2)
         notebook=ttk.Notebook(left); notebook.pack(fill='both',expand=True,pady=8)
         form_scroll=ScrollableFrame(notebook,width=325);notebook.add(form_scroll,text='基本参数')
         form=form_scroll.content
@@ -60,7 +68,7 @@ class App(tk.Tk):
         for row,(key,label,unit) in enumerate([('name','材料名称','')]+FIELDS):
             ttk.Label(form,text=label).grid(row=row,column=0,sticky='w',pady=4)
             var=tk.StringVar(); self.vars[key]=var
-            ttk.Entry(form,textvariable=var,width=17).grid(row=row,column=1,padx=5)
+            ttk.Entry(form,textvariable=var,width=12).grid(row=row,column=1,padx=5)
             ttk.Label(form,text=unit).grid(row=row,column=2,sticky='w')
             var.trace_add('write',self.schedule)
         grading_scroll=ScrollableFrame(notebook,width=325);notebook.add(grading_scroll,text='渐变设置')
@@ -90,38 +98,38 @@ class App(tk.Tk):
         ttk.Label(grading,text='拖动会切换到「独立端点」，同步 Eg、χ。\n掺杂线性允许零浓度；对数两端须为正。',justify='left').pack(anchor='w',pady=6)
         note=ttk.Label(left,text='迁移率与寿命用于性能页，热平衡页只保存。\n示例参数仅用于演示。',foreground='#805c16')
         note.pack(side='bottom',anchor='w',pady=4,before=notebook)
-        controls=ttk.Frame(right); controls.pack(fill='x')
+        controls=ttk.LabelFrame(right,text='求解条件',padding=10); controls.pack(fill='x',pady=(0,7))
         self.mode=tk.StringVar(value='热平衡弯曲能带')
+        ttk.Label(controls,text='能带模型').grid(row=0,column=0,sticky='w',padx=3)
         combo=ttk.Combobox(controls,textvariable=self.mode,values=['热平衡弯曲能带','真空参考能级排列'],state='readonly',width=20)
-        combo.pack(side='left',padx=4); combo.bind('<<ComboboxSelected>>',self.schedule)
+        combo.grid(row=1,column=0,sticky='ew',padx=3); combo.bind('<<ComboboxSelected>>',self.schedule)
+        controls.columnconfigure(0,weight=2)
         self.settings={}
-        for key,label,default in [('T','温度 K','300'),('left','左功函数 eV','5.0'),('right','右功函数 eV','4.1')]:
-            ttk.Label(controls,text=label).pack(side='left',padx=3)
+        for col,(key,label,default) in enumerate([('T','温度 / K','300'),('left','左功函数 / eV','5.0'),('right','右功函数 / eV','4.1')],1):
+            ttk.Label(controls,text=label).grid(row=0,column=col,sticky='w',padx=6)
             var=tk.StringVar(value=default); self.settings[key]=var
-            ttk.Entry(controls,textvariable=var,width=7).pack(side='left'); var.trace_add('write',self.schedule)
-        drag_controls=ttk.Frame(right);drag_controls.pack(fill='x',pady=(7,0))
+            ttk.Entry(controls,textvariable=var,width=7).grid(row=1,column=col,sticky='ew',padx=6)
+            controls.columnconfigure(col,weight=1);var.trace_add('write',self.schedule)
+        view_controls=FlowToolbar(right);view_controls.pack(fill='x',pady=(0,4))
+        self.view=tk.StringVar(value='能带')
+        self.view_combo=ttk.Combobox(view_controls,textvariable=self.view,
+                                    values=['能带','电势','电场','载流子浓度'],state='readonly',width=12)
+        view_controls.add(self.view_combo)
+        self.view_combo.bind('<<ComboboxSelected>>',self.change_view)
         self.drag_enabled=tk.BooleanVar(value=True)
-        ttk.Checkbutton(drag_controls,text='鼠标拖动能带',variable=self.drag_enabled).pack(side='left')
-        ttk.Button(drag_controls,text='撤销拖动',command=self.undo_drag).pack(side='left',padx=6)
-        ttk.Label(drag_controls,text='拖线：移动该带边  ·  拖圆点：改变渐变  ·  Esc：取消').pack(side='left')
+        view_controls.add(ttk.Checkbutton(view_controls,text='拖动带边',variable=self.drag_enabled))
+        view_controls.button('撤销拖动',self.undo_drag)
+        self.show_offsets=tk.BooleanVar(value=True)
+        view_controls.add(ttk.Checkbutton(view_controls,text='界面 ΔEc / ΔEv',variable=self.show_offsets,command=self.change_view))
         self.drag_summary=tk.StringVar()
         drag_label=ttk.Label(right,textvariable=self.drag_summary,foreground='#245565',wraplength=800)
         drag_label.pack(fill='x',pady=5)
-        view_controls=ttk.Frame(right);view_controls.pack(fill='x',pady=(0,5))
-        ttk.Label(view_controls,text='查看').pack(side='left',padx=4)
-        self.view=tk.StringVar(value='能带')
-        self.view_combo=ttk.Combobox(view_controls,textvariable=self.view,
-                                    values=['能带','电势','电场','载流子浓度'],state='readonly',width=14)
-        self.view_combo.pack(side='left')
-        self.view_combo.bind('<<ComboboxSelected>>',self.change_view)
-        self.show_offsets=tk.BooleanVar(value=True)
-        ttk.Checkbutton(view_controls,text='标注界面 ΔEc / ΔEv（右 − 左）',
-                        variable=self.show_offsets,command=self.change_view).pack(side='left',padx=12)
         self.hover_text=tk.StringVar(value='将鼠标移到图中查看该位置的数值。\n')
         hover_label=ttk.Label(right,textvariable=self.hover_text,foreground='#245565',wraplength=850,justify='left')
         hover_label.pack(fill='x',pady=(0,5))
         right.bind('<Configure>',lambda e:[w.configure(wraplength=max(200,e.width-20)) for w in (drag_label,hover_label)])
-        self.fig=Figure(figsize=(8,6),dpi=100); self.ax=self.fig.add_subplot(111)
+        self.fig=Figure(figsize=(8,6),dpi=100); self.fig.set_layout_engine('tight',pad=1.5)
+        self.ax=self.fig.add_subplot(111)
         self.canvas=FigureCanvasTkAgg(self.fig,master=right)
         self.canvas.get_tk_widget().configure(width=250,height=140)
         self.toolbar=NavigationToolbar2Tk(self.canvas,right,pack_toolbar=False)
@@ -263,7 +271,7 @@ class App(tk.Tk):
         ax.set_xlabel('位置 x (nm)');ax.set_xlim(0,width)
         ax.grid(alpha=.18); ax.legend(loc='best')
         self.hover_line=ax.axvline(0,color='#536a80',ls=':',lw=.8,visible=False)
-        self.fig.tight_layout(pad=2.4); self.canvas.draw_idle()
+        self.canvas.draw_idle()
 
     def plot_diagnostic(self):
         ax=self.ax;view=self.view.get()
@@ -491,9 +499,11 @@ class App(tk.Tk):
             '此版没有自动图像识别或反演。\n\n'
             '器件性能：参数独立，可从能带页导入；支持均匀与渐变层，Nc=Nv。'
             '渐变通过薄子层近似，虚拟界面保持原体迁移率；建议增加分段数比较稳定性。'
-            '采用均匀光生率、中性体 SRH 陷阱和可设置的双分子复合；无离子、界面陷阱复合和光谱光学计算。'
+            '支持 AM1.5G/自定义光谱，经法向入射薄膜传输矩阵计算 G(x)，也可手动输入均匀 G。'
+            '采用中性体 SRH 陷阱和可设置的双分子复合；无离子和界面陷阱复合。'
             '寿命通过 C=1/(τ·Nt) 换算捕获系数，Nt=0 时关闭体 SRH。'
-            '效率依赖手动指定的光生率与入射功率，默认值仅供演示。'
+            '光谱模式按完整入射功率计算效率；各层 n,k 须按实际材料指定，内置光学常数仅供演示。'
+            '电学渐变不自动改变 n,k。手动 G 模式须自行对应 G 和入射功率。'
             '输出电流正号表示发电；扫描未覆盖开路点时不显示 Voc、FF 和效率。\n\n'
             '鼠标拖线会移动该层的一条带边；拖端点圆点会改变渐变，保持另一条带边的真空参考位置。'
             '拖动后采用独立电子亲和能端点；掺杂、迁移率和寿命保持原值。'

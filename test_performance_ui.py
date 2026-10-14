@@ -16,6 +16,8 @@ class PerformanceUI(unittest.TestCase):
         self.app.pages.select(self.app.performance)
         self.app.update()
         self.page = self.app.performance
+        self.page.optical_mode.set('手动光生率 G')
+        self.app.update()
 
     def tearDown(self):
         self.app.update()
@@ -133,6 +135,42 @@ class PerformanceUI(unittest.TestCase):
             p.run()
         error.assert_called_once()
         self.assertFalse(p.running)
+
+    def test_spectral_mode_profiles_and_portable_custom_data(self):
+        p = self.page
+        p.optical_mode.set('光谱 · TMM')
+        p.settings['vmax'].set('1.24')
+        self.assertEqual(str(p.G_entry['state']), 'disabled')
+        with tempfile.TemporaryDirectory() as folder:
+            nk_path = Path(folder)/'nk.csv'
+            nk_path.write_text('wavelength_nm,n,k\n300,1.7,0.01\n800,1.7,0.01\n')
+            with patch('performance_page.filedialog.askopenfilename', return_value=str(nk_path)):
+                p.import_layer_nk()
+            self.assertEqual(p.layers[0]['optical_nk']['kind'], 'custom')
+            project = Path(folder)/'optical.json'
+            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(project)):
+                p.save()
+            nk_path.unlink()
+            with patch('performance_page.filedialog.askopenfilename', return_value=str(project)):
+                p.load()
+            self.assertEqual(p.optical_mode.get(), '光谱 · TMM')
+            p.run()
+            self.wait_for_run()
+            self.assertIsNotNone(p.result)
+            self.assertEqual(p.result['optics']['mode'], 'spectrum')
+            for view, header in [('入射光谱', 'wavelength_nm'), ('光生分布', 'G_cm3_s')]:
+                p.plot_view.set(view)
+                p.plot()
+                path = Path(folder)/(view+'.csv')
+                with patch('performance_page.filedialog.asksaveasfilename', return_value=str(path)):
+                    p.export_csv()
+                self.assertIn(header, path.read_text())
+            report = Path(folder)/'result.json'
+            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(report)):
+                p.export_result()
+            data = json.loads(report.read_text(encoding='utf-8'))
+            self.assertIn('spectrum_sha256', data['optics'])
+            self.assertEqual(data['optics']['incident_power_mW_cm2'], 100)
 
 
 if __name__ == '__main__':

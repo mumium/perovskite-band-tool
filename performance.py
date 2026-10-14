@@ -15,6 +15,7 @@ import time
 import numpy as np
 
 from physics import normalize, profile, validate
+from optics import get_optics, default_nk, validate_optics, prepare_optical_files, integrate
 
 ENGINE_VERSION = '5.36'
 ENGINE_BUILD = '5.36-pds1'
@@ -42,6 +43,7 @@ def import_layers(layers):
         a = normalize(deepcopy(original))
         a.update(Nt=1e15, Et=a['Eg']/2, B=1e-10,
                  transfer_n=1e5, transfer_p=1e5, absorber=i == absorber)
+        a.setdefault('optical_nk', default_nk(i, absorber))
         result.append(a)
     return result
 
@@ -144,7 +146,7 @@ def validate_device(layers, settings):
         raise ValueError('扫描至少需要 3 个点，且不能超过 2001 个点；请调整范围或步长')
     if s['G'] < 0 or s['pin'] <= 0:
         raise ValueError('光生率须 ≥ 0，入射功率密度须 > 0')
-    if s['G'] > 0 and not any(a.get('absorber') for a in layers):
+    if (s['G'] > 0 or get_optics(s)['mode'] != 'manual') and not any(a.get('absorber') for a in layers):
         raise ValueError('请至少勾选一个光生吸收层')
     if s['rs'] < 0 or s['rsh'] <= 0:
         raise ValueError('串联电阻须 ≥ 0，并联电阻须 > 0（单位 Ω·cm²）')
@@ -176,6 +178,32 @@ def validate_device(layers, settings):
             side = '左' if key == 'left' else '右'
             raise ValueError(f'{side}电极功函数须在接触层 χ 至 χ + Eg 范围内（SimSS 限制）')
     simulation_mesh(layers, s)
+    validate_optics(layers, s)
+
+
+def _reverse_for_illumination(layers, settings):
+    """Native TMM illuminates the left side; mirror the full physical device.
+
+    Keep photovoltaic terminal sign convention, swap contact conditions, and
+    carry true interface transfer speeds with the corresponding interface.
+    """
+    reversed_layers = []
+    for i in range(len(layers)-1, -1, -1):
+        a = normalize(deepcopy(layers[i]))
+        p = profile(a, [0., 1.])
+        for key in ('Eg', 'Nd', 'Na'):
+            a[key], a[key+'_end'] = float(p[key][1]), float(p[key][0])
+        a.update(affinity_mode='独立端点', chi=float(p['chi'][1]), chi_end=float(p['chi'][0]))
+        if i > 0:
+            for key in ('transfer_n', 'transfer_p'):
+                a[key] = layers[i-1][key]
+        reversed_layers.append(a)
+    s = deepcopy(settings)
+    s['left'], s['right'] = s['right'], s['left']
+    s['left_anode'] = 1-int(s['left_anode'])
+    s['sn_left'], s['sn_right'] = s['sn_right'], s['sn_left']
+    s['sp_left'], s['sp_right'] = s['sp_right'], s['sp_left']
+    return reversed_layers, s
 
 
 def _template(name, replacements):
@@ -190,22 +218,34 @@ def _template(name, replacements):
 
 
 def write_inputs(folder, layers, settings):
-    """Write a complete, reproducible run directory (no optical data required)."""
+    """Write a complete run directory, including normalized optical tables."""
     validate_device(layers, settings)
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     s = settings
+    mirrored = get_optics(s)['mode'] == 'spectrum' and get_optics(s)['illumination'] == 'right'
+    if mirrored:
+        layers, s = _reverse_for_illumination(layers, s)
     pieces, points, spacing = simulation_mesh(layers, s)
-    setup = _template('simulation_setup.txt', dict(
+    optical = prepare_optical_files(folder, pieces, s)
+    spectral = optical['mode'] == 'spectrum'
+    replacements = dict(
         T=s['T'], leftElec=1 if s['left_anode'] else -1,
         W_L=s['left'], W_R=s['right'],
         S_n_L=s['sn_left']*.01, S_p_L=s['sp_left']*.01,
         S_n_R=s['sn_right']*.01, S_p_R=s['sp_right']*.01,
         R_series=s['rs']*1e-4, R_shunt=s['rsh']*1e-4,
-        genProfile='none', G_frac=1, NP=points,
+        genProfile='calc' if spectral else 'none', G_frac=1, NP=points,
         convVar=4, failureMode=0, Vmin=s['vmin'], Vmax=s['vmax'], Vstep=s['vstep'],
         Vscan=1, untilVoc=0, timeout=int(s['timeout']), autoTidy=0,
-        varFile='none', limitDigits=0))
+        varFile='OpticalProfile.dat' if spectral else 'none', limitDigits=0)
+    if spectral:
+        o = get_optics(s)
+        replacements.update(spectrum='spectrum.txt', nkSubstrate='substrate.txt', nkTCO='tco.txt', nkBE='back.txt',
+                            L_TCO=o['tco_thickness']*1e-9, L_BE=o['back_thickness']*1e-9,
+                            lambda_min=o['wavelength_min']*1e-9, lambda_max=o['wavelength_max']*1e-9,
+                            outputRatio=int((s['vmax']-s['vmin'])/s['vstep']+1e-10)+1)
+    setup = _template('simulation_setup.txt', replacements)
     setup = re.sub(r'(?m)^l[123]\s*=.*\n?', '', setup)
     layer_lines = '\n'.join(f'l{i+1} = layer_{i+1}.txt * layer {i+1}' for i in range(len(pieces)))
     setup = setup.replace('**Contacts', layer_lines+'\n\n**Contacts', 1)
@@ -224,7 +264,8 @@ def write_inputs(folder, layers, settings):
             mu_n=a['mun']*1e-4, mu_p=a['mup']*1e-4,
             nu_int_n=vn, nu_int_p=vp,
             N_t_int=0, N_anion=0, N_cation=0, mu_anion=0, mu_cation=0, ionsMayEnter=0,
-            G_ehp=s['G']*1e6 if a.get('absorber') else 0,
+            G_ehp=0 if spectral else s['G']*1e6 if a.get('absorber') else 0,
+            nkLayer=f'nk_layer_{i+1}.txt' if spectral else 'none',
             layerGen=int(bool(a.get('absorber'))), k_direct=a['B']*1e-6,
             N_t_bulk=nt, C_n_bulk=1/(a['taun']*nt) if nt else 0,
             C_p_bulk=1/(a['taup']*nt) if nt else 0,
@@ -232,7 +273,8 @@ def write_inputs(folder, layers, settings):
         (folder/f'layer_{i+1}.txt').write_text(text, encoding='ascii')
     mesh = dict(grading_slices=int(s.get('grading_slices', 16)), sublayers=len(pieces),
                 requested_points=int(s['points']), effective_points=points,
-                method='endpoint-centred sublayers; bulk mobility at virtual interfaces', pieces=pieces)
+                method='endpoint-centred sublayers; bulk mobility at virtual interfaces', pieces=pieces,
+                mirrored=mirrored, optical=optical)
     (folder/'inputs.json').write_text(json.dumps(dict(engine=ENGINE_VERSION, layers=layers,
                                                      settings=s, mesh=mesh), ensure_ascii=False, indent=2), encoding='utf-8')
     return mesh
@@ -329,7 +371,32 @@ def run_simulation(layers, settings, cancel=None):
             warnings.append(f"空间网格已自动增至 {mesh['effective_points']} 点以容纳子层。")
         if not np.all(np.isfinite(data['errJ'])):
             raise RuntimeError('SimSS 电流守恒误差无效，未采用此曲线。')
-        generated = 1.602176634e-19*settings['G']*sum(a['thickness']*1e-7 for a in layers if a.get('absorber'))*1e3
+        optical = mesh.pop('optical')
+        if optical['mode'] == 'spectrum':
+            profile_data = np.atleast_1d(np.genfromtxt(Path(folder)/'OpticalProfile.dat', names=True))
+            required = ('x', 'G_ehp', 'lid')
+            if not set(required).issubset(profile_data.dtype.names or ()) or len(profile_data) != mesh['effective_points']+2:
+                raise RuntimeError('光生分布输出不完整，未采用此次模拟。')
+            x = profile_data['x']*1e9
+            generation = profile_data['G_ehp']/1e6
+            lid = np.asarray(profile_data['lid'], dtype=int)-1
+            parents = np.array([p['parent_index'] for p in mesh['pieces']])[lid]
+            if mesh['mirrored']:
+                x = sum(a['thickness'] for a in layers)-x
+                parents = len(layers)-1-parents
+            order = np.argsort(x)
+            x, generation, parents = x[order], generation[order], parents[order]
+            if not np.all(np.isfinite([x, generation])) or np.any(generation < 0):
+                raise RuntimeError('光生分布包含无效或负数值。')
+            generated = float(1.602176634e-19*integrate(generation, x*1e-7)*1e3)
+            optical.update(x_nm=x.tolist(), G_cm3_s=generation.tolist(), layer_index=parents.tolist())
+            warnings.append(f"光生计算波段 {optical['settings']['wavelength_min']:g}–{optical['settings']['wavelength_max']:g} nm；效率分母采用完整入射光谱 {settings['pin']:g} mW/cm²。")
+            if any(snap['source']['kind'] == 'builtin' for snap in optical['nk_snapshots']+optical['boundary_nk_snapshots']):
+                warnings.append('部分光学层使用内置示例 n,k，请按实际材料替换。')
+            if mesh['sublayers'] > len(layers):
+                warnings.append('当前渐变为电学渐变，各原始材料层的 n,k 沿厚度保持相同。')
+        else:
+            generated = 1.602176634e-19*settings['G']*sum(a['thickness']*1e-7 for a in layers if a.get('absorber'))*1e3
         if metrics['Jsc'] is not None and metrics['Jsc'] > generated*1.01+1e-5:
             warnings.append('Jsc 高于 q∫Gdx 的光生电流参考值，请检查接触注入及数值收敛。')
         if metrics['PCE'] is not None and metrics['PCE'] > 100:
@@ -342,4 +409,4 @@ def run_simulation(layers, settings, cancel=None):
                     max_current_error=float(np.max(data['errJ'])),
                     relative_current_error=relative_error,
                     layers=deepcopy(layers), settings=dict(settings), log=log,
-                    engine=ENGINE_VERSION, engine_build=ENGINE_BUILD, mesh=mesh)
+                    engine=ENGINE_VERSION, engine_build=ENGINE_BUILD, mesh=mesh, optics=optical)
