@@ -12,6 +12,8 @@ Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两
 
 Windows 打包版：双击 `dist/PerovskiteDeviceStudio.exe`，无需安装 Python 或 SimSS。可单独复制 EXE 到其他 Windows 64 位电脑运行。旧版 `PerovskiteBandTool.exe` 不再作为当前版本入口。
 
+[下载 Windows 1.1.0 单文件版](https://github.com/mumium/perovskite-band-tool/releases/download/v1.1.0/PerovskiteDeviceStudio.exe) · [版本发布页](https://github.com/mumium/perovskite-band-tool/releases/tag/v1.1.0)
+
 重新打包：安装项目依赖及 `pyinstaller`，再运行 `build_exe.bat`。程序为单文件无控制台版本，首次启动需要解压运行依赖，可能稍慢。
 
 ## 器件性能模拟
