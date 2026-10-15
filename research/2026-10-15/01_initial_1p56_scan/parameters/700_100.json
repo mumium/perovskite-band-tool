@@ -1,0 +1,240 @@
+{
+  "schema": 1,
+  "model": "simss",
+  "engine": "5.36",
+  "layers": [
+    {
+      "name": "HTL（示例）",
+      "thickness": 20.0,
+      "eps": 10.0,
+      "Eg": 3.0,
+      "chi": 2.0,
+      "Nv": 1e+19,
+      "Nc": 1e+19,
+      "mun": 10.0,
+      "mup": 10.0,
+      "Nd": 0.0,
+      "Na": 1e+17,
+      "taun": 1e-06,
+      "taup": 1e-06,
+      "Eg_mode": "均匀",
+      "Eg_end": 3.0,
+      "Nd_mode": "均匀",
+      "Nd_end": 0.0,
+      "Na_mode": "均匀",
+      "Na_end": 1e+17,
+      "affinity_mode": "随带隙分配",
+      "chi_end": 2.0,
+      "band_fraction": 0.0,
+      "Nt": 1000000000000000.0,
+      "Et": 1.5,
+      "B": 1e-10,
+      "transfer_n": 100000.0,
+      "transfer_p": 100000.0,
+      "absorber": false,
+      "optical_nk": {
+        "kind": "builtin",
+        "name": "PTAA"
+      },
+      "optical_model": {
+        "mode": "fixed",
+        "reference_gap": 3.0
+      },
+      "interface": {
+        "Nt": 0.0,
+        "Et": 4.7,
+        "Cn": 1e-08,
+        "Cp": 1e-08,
+        "trap_type": 0,
+        "auto_energy": true
+      }
+    },
+    {
+      "name": "钙钛矿3.0~1.56渐变",
+      "thickness": 700.0,
+      "eps": 25.0,
+      "Eg": 3.0,
+      "chi": 2.1,
+      "Nv": 1e+19,
+      "Nc": 1e+19,
+      "mun": 10.0,
+      "mup": 10.0,
+      "Nd": 0.0,
+      "Na": 0.0,
+      "taun": 1e-06,
+      "taup": 1e-06,
+      "Eg_mode": "线性",
+      "Eg_end": 1.56,
+      "Nd_mode": "均匀",
+      "Nd_end": 0.0,
+      "Na_mode": "均匀",
+      "Na_end": 0.0,
+      "affinity_mode": "独立端点",
+      "chi_end": 3.8,
+      "band_fraction": 0.0,
+      "Nt": 1000000000000000.0,
+      "Et": 1.5,
+      "B": 1e-10,
+      "transfer_n": 100000.0,
+      "transfer_p": 100000.0,
+      "absorber": true,
+      "optical_nk": {
+        "kind": "builtin",
+        "name": "MAPI"
+      },
+      "optical_model": {
+        "mode": "edge",
+        "reference_gap": 1.55
+      },
+      "interface": {
+        "Nt": 0.0,
+        "Et": 4.7,
+        "Cn": 1e-08,
+        "Cp": 1e-08,
+        "trap_type": 0,
+        "auto_energy": true
+      }
+    },
+    {
+      "name": "钙钛矿1.56",
+      "thickness": 100.0,
+      "eps": 25.0,
+      "Eg": 1.56,
+      "chi": 3.9,
+      "Nv": 1e+19,
+      "Nc": 1e+19,
+      "mun": 10.0,
+      "mup": 10.0,
+      "Nd": 0.0,
+      "Na": 0.0,
+      "taun": 1e-06,
+      "taup": 1e-06,
+      "Eg_mode": "均匀",
+      "Eg_end": 1.56,
+      "Nd_mode": "均匀",
+      "Nd_end": 0.0,
+      "Na_mode": "均匀",
+      "Na_end": 0.0,
+      "affinity_mode": "随带隙分配",
+      "chi_end": 3.9,
+      "band_fraction": 0.0,
+      "Nt": 1000000000000000.0,
+      "Et": 0.78,
+      "B": 1e-10,
+      "transfer_n": 100000.0,
+      "transfer_p": 100000.0,
+      "absorber": true,
+      "optical_nk": {
+        "kind": "builtin",
+        "name": "MAPI"
+      },
+      "optical_model": {
+        "mode": "edge",
+        "reference_gap": 1.55
+      },
+      "interface": {
+        "Nt": 0.0,
+        "Et": 4.7,
+        "Cn": 1e-08,
+        "Cp": 1e-08,
+        "trap_type": 0,
+        "auto_energy": true
+      }
+    },
+    {
+      "name": "ETL（示例）",
+      "thickness": 30.0,
+      "eps": 4.0,
+      "Eg": 2.3,
+      "chi": 4.0,
+      "Nv": 1e+19,
+      "Nc": 1e+19,
+      "mun": 10.0,
+      "mup": 10.0,
+      "Nd": 1e+17,
+      "Na": 0.0,
+      "taun": 1e-06,
+      "taup": 1e-06,
+      "Eg_mode": "均匀",
+      "Eg_end": 2.3,
+      "Nd_mode": "均匀",
+      "Nd_end": 1e+17,
+      "Na_mode": "均匀",
+      "Na_end": 0.0,
+      "affinity_mode": "随带隙分配",
+      "chi_end": 4.0,
+      "band_fraction": 0.0,
+      "Nt": 1000000000000000.0,
+      "Et": 1.15,
+      "B": 1e-10,
+      "transfer_n": 100000.0,
+      "transfer_p": 100000.0,
+      "absorber": false,
+      "optical_nk": {
+        "kind": "builtin",
+        "name": "C60"
+      },
+      "optical_model": {
+        "mode": "fixed",
+        "reference_gap": 2.3
+      },
+      "interface": {
+        "Nt": 0.0,
+        "Et": 4.7,
+        "Cn": 1e-08,
+        "Cp": 1e-08,
+        "trap_type": 0,
+        "auto_energy": true
+      }
+    }
+  ],
+  "settings": {
+    "T": 300.0,
+    "left": 5.0,
+    "right": 4.1,
+    "left_anode": 1,
+    "G": 3e+21,
+    "pin": 100.0,
+    "vmin": -0.04,
+    "vmax": 1.5,
+    "vstep": 0.02,
+    "sn_left": 0.0,
+    "sp_left": 10000000.0,
+    "sn_right": 10000000.0,
+    "sp_right": 0.0,
+    "rs": 0.3,
+    "rsh": 40000.0,
+    "points": 500,
+    "timeout": 900,
+    "grading_slices": 16,
+    "optics": {
+      "mode": "spectrum",
+      "illumination": "left",
+      "wavelength_min": 300.0,
+      "wavelength_max": 800.0,
+      "spectrum": {
+        "kind": "builtin",
+        "name": "AM1.5G"
+      },
+      "substrate": {
+        "kind": "builtin",
+        "name": "ITO"
+      },
+      "tco": {
+        "kind": "builtin",
+        "name": "ITO"
+      },
+      "tco_thickness": 200.0,
+      "back": {
+        "kind": "builtin",
+        "name": "Ag"
+      },
+      "back_thickness": 100.0
+    },
+    "eqe": {
+      "step_nm": 10.0,
+      "photon_flux_cm2_s": 100000000000000.0,
+      "background_scale": 1.0
+    }
+  }
+}

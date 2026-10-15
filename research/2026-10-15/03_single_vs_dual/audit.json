@@ -1,0 +1,27 @@
+{
+  "all_inputs_verified": true,
+  "physics_code_unchanged": true,
+  "checks": [
+    {
+      "design": "dual_640_160",
+      "JV_current_error": 1.5422093004647038e-06,
+      "EQE_error": 1.2261860318164723e-06,
+      "baseline_delta": 5.913533129842108e-08,
+      "runtime_recoveries": 0
+    },
+    {
+      "design": "gradient_800",
+      "JV_current_error": 4.2112381880131676e-07,
+      "EQE_error": 6.125876353901112e-07,
+      "baseline_delta": 6.752242143193143e-08,
+      "runtime_recoveries": 0
+    },
+    {
+      "design": "uniform_800",
+      "JV_current_error": 4.261243440957328e-06,
+      "EQE_error": 1.2329447860728473e-05,
+      "baseline_delta": -3.2574654085237853e-09,
+      "runtime_recoveries": 0
+    }
+  ]
+}

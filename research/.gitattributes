@@ -1,0 +1,4 @@
+# Keep scientific data byte-for-byte; complete archive includes SHA256 checks.
+* -text whitespace=cr-at-eol
+# Preserve generated SVG coordinate spacing embedded in offline HTML reports.
+*.html whitespace=cr-at-eol,-blank-at-eol

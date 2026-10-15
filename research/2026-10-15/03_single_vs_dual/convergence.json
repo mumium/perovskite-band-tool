@@ -1,0 +1,14 @@
+{
+  "dual_640_160": {
+    "PCE_delta_100_slices_pp": 0.0024621265225590605,
+    "PCE_delta_1000_grid_pp": 0.060490690018109916
+  },
+  "gradient_800": {
+    "PCE_delta_100_slices_pp": 0.03889448174366805,
+    "PCE_delta_1000_grid_pp": 0.06129857699907859
+  },
+  "uniform_800": {
+    "PCE_delta_100_slices_pp": 0.0,
+    "PCE_delta_1000_grid_pp": 0.020096192023640214
+  }
+}

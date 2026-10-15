@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-15",
+  "datasets": [
+    {
+      "id": "01_initial_1p56_scan",
+      "title": "早期 1.56 eV 双层厚度扫描",
+      "folder": "2026-10-15_双层厚度扫描_800nm",
+      "archive": "双层钙钛矿厚度扫描_800nm_完整结果.zip",
+      "report": "扫描结果报告.html",
+      "summary": "性能参数汇总.csv",
+      "count": "23 组完整 J–V / EQE",
+      "condition": "早期 ITO 入射与 1.56 eV 参数；请与后续 Air / 1.53 eV 模型分开阅读。"
+    },
+    {
+      "id": "02_air_1p53_scan",
+      "title": "Air 入射、1.53 eV 双层厚度优化",
+      "folder": "2026-10-15_Air入射_1.53eV_厚度优化",
+      "archive": "Air入射_1.53eV_双层钙钛矿厚度优化_完整结果.zip",
+      "report": "扫描结果报告.html",
+      "summary": "性能参数汇总.csv",
+      "count": "95 个厚度的 J–V，其中 51 组配套 EQE",
+      "condition": "按新器件文件保留光学设置。正式 500 网格/16 分段；另有 2000 网格/100 分段候选复核。"
+    },
+    {
+      "id": "03_single_vs_dual",
+      "title": "800 nm 单层与 640/160 nm 双层对照",
+      "folder": "2026-10-15_800nm单层与640-160双层对照",
+      "archive": "800nm单层与640-160双层_完整对照结果.zip",
+      "report": "三结构对照报告.html",
+      "summary": "性能与EQE积分汇总.csv",
+      "count": "3 组完整 J–V / EQE，另有 3 组光学参考值敏感性 J–V",
+      "condition": "三结构正式均为 2000 网格/64 分段/0.01 V；原参数结果与统一参考 Eg 检查分开保存。"
+    }
+  ]
+}
