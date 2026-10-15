@@ -2,7 +2,7 @@
 
 包含两次厚度优化及 800 nm 单层/640–160 nm 双层对照。报告可离线查看，无需安装 Python 或模拟软件。
 
-**[下载全部报告与完整源数据 ZIP](https://github.com/mumium/perovskite-band-tool/releases/download/research-2026-10-15/perovskite-research-2026-10-15-full.zip)** · **[数据发布页与 SHA256 校验](https://github.com/mumium/perovskite-band-tool/releases/tag/research-2026-10-15)**
+**[下载全部报告与完整源数据 ZIP](https://github.com/mumium/perovskite-device-studio/releases/download/research-2026-10-15/perovskite-research-2026-10-15-full.zip)** · **[数据发布页与 SHA256 校验](https://github.com/mumium/perovskite-device-studio/releases/tag/research-2026-10-15)**
 
 下载 ZIP，解压后双击 `研究数据_2026-10-15/开始查看.html`。不要在压缩包内直接打开报告。全部图表已内嵌，无需联网。
 
