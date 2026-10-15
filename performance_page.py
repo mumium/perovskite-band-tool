@@ -285,18 +285,20 @@ class PerformancePage(ttk.Frame):
             var.trace_add('write', self.mark_dirty)
         ttk.Label(eqe_tab.content, text='短路微分 EQE；使用光学波段，逐波长叠加 1 nm 探测光。\n计算包含输运/复合；EQE 单独保存，切回 J–V 查看其指标。',
                   foreground='#805c16').grid(row=3, column=0, columnspan=3, sticky='w', padx=5, pady=5)
-        summary = ttk.Frame(right, padding=(4, 6))
+        summary = ttk.Frame(right, padding=(4, 2))
         self.summary = summary
         summary.pack(fill='x')
         self.metric_vars = {}
         for i, (key, title, unit) in enumerate([('Jsc', 'Jsc', 'mA/cm²'), ('Voc', 'Voc', 'V'),
                                                 ('FF', 'FF', '%'), ('PCE', 'PCE', '%')]):
-            card = ttk.LabelFrame(summary, text=f'{title} · {unit}', padding=5)
+            card = ttk.Frame(summary, padding=(8, 0))
             card.grid(row=0, column=i, sticky='ew', padx=4)
             summary.columnconfigure(i, weight=1)
+            ttk.Label(card, text=f'{title} · {unit}', font=('Microsoft YaHei', 9),
+                      foreground='#617580').pack(anchor='w')
             var = tk.StringVar(value='—')
             self.metric_vars[key] = var
-            ttk.Label(card, textvariable=var, font=('Microsoft YaHei', 14, 'bold'), foreground='#245565').pack()
+            ttk.Label(card, textvariable=var, font=('Microsoft YaHei', 16, 'bold'), foreground='#245565').pack(anchor='w')
         self.mpp_text = tk.StringVar(value='尚未计算。输入支持科学计数法，例如 3e21。')
         self.mpp_label = ttk.Label(right, textvariable=self.mpp_text, wraplength=800)
         self.mpp_label.pack(anchor='w', padx=8)

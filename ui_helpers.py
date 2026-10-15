@@ -14,7 +14,7 @@ def configure_theme(root):
     style.configure('TLabel', background='#ffffff')
     style.configure('TCheckbutton', background='#ffffff', padding=(2, 3))
     style.map('TCheckbutton', background=[('active', '#f0f6f8')])
-    style.configure('TButton', width=0, padding=(10, 7), background='#f3f6fa', bordercolor='#d6e0e8', relief='flat', shiftrelief=0)
+    style.configure('TButton', width=0, padding=(8, 4), background='#f3f6fa', bordercolor='#d6e0e8', relief='flat', shiftrelief=0)
     style.map('TButton', background=[('active', '#e3edf2')], foreground=[('disabled', '#93a3b1')])
     style.configure('Accent.TButton', font=('Microsoft YaHei', 11, 'bold'), background='#087e8b',
                     foreground='white', padding=(16, 10), bordercolor='#087e8b')
@@ -23,7 +23,7 @@ def configure_theme(root):
     style.configure('EQE.Accent.TButton', background='#7651a8', bordercolor='#7651a8')
     style.map('EQE.Accent.TButton', background=[('disabled', '#b8a5d0'), ('active', '#5d398c')],
               foreground=[('disabled', '#f0eaf7')])
-    style.configure('TMenubutton', width=0, padding=(10, 7), background='#f3f6fa', bordercolor='#d6e0e8', relief='flat')
+    style.configure('TMenubutton', width=0, padding=(8, 4), background='#f3f6fa', bordercolor='#d6e0e8', relief='flat')
     style.configure('TEntry', padding=(5, 4), fieldbackground='#fbfdff', bordercolor='#d6e0e8')
     style.configure('TCombobox', padding=(4, 4), fieldbackground='#fbfdff', bordercolor='#d6e0e8')
     style.map('TCombobox', fieldbackground=[('readonly', '#fbfdff')])
