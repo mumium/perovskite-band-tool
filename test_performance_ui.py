@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
+import numpy as np
 
 from app import App
 
@@ -71,6 +72,9 @@ class PerformanceUI(unittest.TestCase):
             self.assertIn('log', data)
             self.assertEqual(len(data['voltage']), len(data['current']))
             self.assertIn('J_output_mA_cm2', csv.read_text())
+            table = np.genfromtxt(csv, delimiter=',', names=True)
+            for key, column in [('Jsc', 'Jsc_mA_cm2'), ('Voc', 'Voc_V'), ('FF', 'FF_percent'), ('PCE', 'PCE_percent')]:
+                np.testing.assert_allclose(table[column], p.result['metrics'][key])
         p.settings['G'].set('2e21')
         previous = p.result
         value = p.metric_vars['PCE'].get()

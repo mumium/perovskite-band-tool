@@ -5,12 +5,17 @@ positive energies below vacuum. Output J is positive for delivered PV current.
 """
 from copy import deepcopy
 from pathlib import Path
+from datetime import datetime, timezone
+import hashlib
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 import numpy as np
 
@@ -51,6 +56,13 @@ def interface_energy(left, right):
 
 class SimulationCancelled(Exception):
     pass
+
+
+class EngineFailure(RuntimeError):
+    def __init__(self, message, returncode=None, diagnostic_path=None):
+        super().__init__(message)
+        self.returncode = returncode
+        self.diagnostic_path = diagnostic_path
 
 
 def import_layers(layers):
@@ -362,29 +374,124 @@ def calculate_metrics(voltage, current, pin):
     return v, j, metrics, warnings
 
 
-def _run_engine(folder, settings, cancel=None, started=None):
+def _diagnostics_directories():
+    local = os.environ.get('LOCALAPPDATA')
+    preferred = Path(local)/'PerovskiteDeviceStudio'/'diagnostics' if local else Path.home()/'PerovskiteDeviceStudio-diagnostics'
+    return preferred, Path(tempfile.gettempdir())/'PerovskiteDeviceStudio-diagnostics'
+
+
+def _engine_executable():
+    """Frozen apps run an exact, verified engine copy from a stable user path."""
+    bundled = ENGINE_DIR/('simss.exe' if sys.platform == 'win32' else 'simss')
+    if not bundled.is_file():
+        raise RuntimeError(f'未找到 SimSS {ENGINE_VERSION} 求解器：{bundled}')
+    if not getattr(sys, 'frozen', False) or sys.platform != 'win32':
+        return bundled
+    local = os.environ.get('LOCALAPPDATA')
+    if not local:
+        return bundled
+    digest = hashlib.sha256(bundled.read_bytes()).hexdigest()
+    directory = Path(local)/'PerovskiteDeviceStudio'/'engines'/digest
+    target = directory/'simss.exe'
+    temporary = directory/('simss_'+uuid.uuid4().hex+'.tmp')
+    def valid():
+        return target.is_file() and hashlib.sha256(target.read_bytes()).hexdigest() == digest
+    try:
+        if valid():
+            return target
+        directory.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(bundled, temporary)
+        if hashlib.sha256(temporary.read_bytes()).hexdigest() != digest:
+            raise OSError('求解器副本校验失败')
+        try:
+            os.replace(temporary, target)
+        except OSError:
+            if not valid():
+                raise
+        return target
+    except OSError:
+        return bundled  # Read-only profiles can still use the original engine.
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _engine_failure(folder, context, message, stdout='', stderr='', log='', returncode=None, executable=None):
+    """Keep this attempt's inputs and full output after its temporary folder closes."""
+    folder = Path(folder)
+    saved = None
+    try:
+        from app_info import APP_VERSION
+        metadata = dict(created_utc=datetime.now(timezone.utc).isoformat(),
+                        operation=context, returncode=returncode, message=message,
+                        app_version=APP_VERSION, engine=ENGINE_VERSION, engine_build=ENGINE_BUILD,
+                        executable=str(executable or ENGINE_DIR/('simss.exe' if sys.platform == 'win32' else 'simss')),
+                        frozen=bool(getattr(sys, 'frozen', False)), platform=sys.platform,
+                        windows_version=list(sys.getwindowsversion()) if sys.platform == 'win32' else None)
+        for name, content in [('stdout.txt', stdout), ('stderr.txt', stderr),
+                              ('diagnostics.json', json.dumps(metadata, ensure_ascii=False, indent=2))]:
+            (folder/name).write_text(content, encoding='utf-8')
+        name = 'simss_failure_'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex[:8]
+        for directory in _diagnostics_directories():
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+                saved = shutil.make_archive(str(directory/name), 'zip', root_dir=folder)
+                break
+            except OSError:
+                continue
+    except (OSError, ValueError):
+        pass  # A diagnostic write failure must never hide the solver error.
+    sections = [f'{context}失败：{message}']
+    if returncode == 226:
+        sections.append('226 是求解器运行时异常，不能按普通数值不收敛处理；请比较文件夹版或检查运行环境。')
+    sections.append('本次失败输入与完整日志已保存：\n'+saved if saved else '诊断包未能保存。')
+    if stderr.strip():
+        sections.append('本次错误输出：\n'+stderr[-1400:])
+    if stdout.strip():
+        sections.append('本次控制台输出：\n'+stdout[-1000:])
+    if log.strip():
+        sections.append('本次计算日志：\n'+log[-1000:])
+    elif not stdout.strip() and not stderr.strip():
+        sections.append('本次未生成运行输出或计算日志；没有使用前一次计算的日志。')
+    return EngineFailure('\n\n'.join(sections), returncode, saved)
+
+
+def _run_engine_once(folder, settings, cancel=None, started=None, context='J–V 计算'):
     """Execute one native run; never return partial or nonfinite output."""
     if cancel is not None and cancel.is_set():
         raise SimulationCancelled('模拟已取消')
-    exe = ENGINE_DIR / ('simss.exe' if sys.platform == 'win32' else 'simss')
-    if not exe.is_file():
-        raise RuntimeError(f'未找到 SimSS {ENGINE_VERSION} 求解器：{exe}')
+    exe = _engine_executable()
     started = time.monotonic() if started is None else started
     if time.monotonic()-started > settings['timeout']:
         raise RuntimeError('模拟总时长超过超时设置')
-    process = subprocess.Popen([str(exe), 'simulation_setup.txt'], cwd=folder,
-                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                               creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
+    folder = Path(folder)
+    # EQE reuses a directory. No previous run's log or result may describe or
+    # validate a new attempt that crashes before opening its output files.
+    for name in ('log.txt', 'JV.dat', 'OpticalProfile.dat', 'scPars.txt', 'Var.dat',
+                 'stdout.txt', 'stderr.txt', 'diagnostics.json'):
+        (folder/name).unlink(missing_ok=True)
+    try:
+        process = subprocess.Popen([str(exe), 'simulation_setup.txt'], cwd=folder,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
+    except OSError as error:
+        raise _engine_failure(folder, context, '无法启动 SimSS：'+str(error), executable=exe) from error
+    timed_out = False
     try:
         while True:
             try:
-                output, _ = process.communicate(timeout=.2)
+                output, error_output = process.communicate(timeout=.2)
                 break
             except subprocess.TimeoutExpired:
                 if cancel is not None and cancel.is_set():
                     raise SimulationCancelled('模拟已取消')
                 if time.monotonic()-started > settings['timeout']+5:
-                    raise RuntimeError('SimSS 计算超时；请减少扫描点数或调整器件参数。')
+                    process.kill()
+                    output, error_output = process.communicate()
+                    timed_out = True
+                    break
     finally:
         if process.poll() is None:
             process.kill()
@@ -392,19 +499,66 @@ def _run_engine(folder, settings, cancel=None, started=None):
     log_path = Path(folder)/'log.txt'
     log = log_path.read_text(encoding='utf-8', errors='replace') if log_path.exists() else ''
     console = output.decode('utf-8', errors='replace')
+    stderr = (error_output or b'').decode('utf-8', errors='replace')
+    def failed(message):
+        return _engine_failure(folder, context, message, console, stderr, log, process.returncode, exe)
+    if timed_out:
+        raise failed('SimSS 计算超时；请减少计算点数或调整超时设置。')
     if process.returncode != 0:
-        raise RuntimeError(f'SimSS 未完成计算（退出码 {process.returncode}），未采用部分曲线。\n'+(console or log)[-3500:])
+        raise failed(f'SimSS 未完成计算（退出码 {process.returncode}），未采用部分曲线。')
     data_path = Path(folder)/'JV.dat'
     if not data_path.exists():
-        raise RuntimeError('SimSS 未生成 J–V 文件。\n'+(console or log)[-2000:])
-    data = np.atleast_1d(np.genfromtxt(data_path, names=True))
-    if not {'Vext', 'Jext', 'errJ'}.issubset(data.dtype.names or ()):
-        raise RuntimeError('SimSS 输出列不匹配，要求 Vext、Jext、errJ。')
+        raise failed('SimSS 未生成本次 J–V 文件。')
+    try:
+        data = np.atleast_1d(np.genfromtxt(data_path, names=True))
+    except (ValueError, OSError) as error:
+        raise failed('SimSS 输出无法读取：'+str(error)) from error
+    if data.size == 0 or not {'Vext', 'Jext', 'errJ'}.issubset(data.dtype.names or ()):
+        raise failed('SimSS 输出列不匹配，要求 Vext、Jext、errJ。')
     if not np.all(np.isfinite([data['Vext'], data['Jext'], data['errJ']])):
-        raise RuntimeError('SimSS 电流或收敛误差包含无效数值')
+        raise failed('SimSS 电流或收敛误差包含无效数值')
     if cancel is not None and cancel.is_set():
         raise SimulationCancelled('模拟已取消')
     return data, log
+
+
+def _run_engine(folder, settings, cancel=None, started=None, context='J–V 计算'):
+    """Only transient runtime 226 may restart, with identical inputs and deadline."""
+    started = time.monotonic() if started is None else started
+    failures = []
+    for attempt in range(1, 4):
+        try:
+            data, log = _run_engine_once(folder, settings, cancel, started,
+                                         context=f'{context}（尝试 {attempt}/3）')
+        except EngineFailure as error:
+            if error.returncode != 226 or attempt == 3:
+                raise
+            failures.append(dict(context=context, returncode=226, attempt=attempt,
+                                 diagnostic_path=error.diagnostic_path))
+            if cancel is not None:
+                if cancel.wait(.15):
+                    raise SimulationCancelled('模拟已取消') from error
+            else:
+                time.sleep(.15)
+            continue
+        if failures:
+            path = Path(folder)/'engine_recoveries.json'
+            previous = json.loads(path.read_text(encoding='utf-8')) if path.exists() else []
+            path.write_text(json.dumps(previous+failures, ensure_ascii=False, indent=2), encoding='utf-8')
+            log += f'\nPDS: {context} 在 {len(failures)} 次退出码 226 后重新启动成功；失败诊断已保留。\n'
+        return data, log
+
+
+def _recovery_report(folder, warnings):
+    path = Path(folder)/'engine_recoveries.json'
+    recoveries = json.loads(path.read_text(encoding='utf-8')) if path.exists() else []
+    if recoveries:
+        locations = [a['diagnostic_path'] for a in recoveries if a.get('diagnostic_path')]
+        note = f'本次发生 {len(recoveries)} 次求解器 226 异常，重新启动后完成；请关注运行环境。'
+        if locations:
+            note += ' 诊断目录：'+str(Path(locations[0]).parent)
+        warnings.append(note)
+    return recoveries
 
 
 def run_simulation(layers, settings, cancel=None):
@@ -456,7 +610,8 @@ def run_simulation(layers, settings, cancel=None):
         relative_error = float(np.max(data['errJ']/np.maximum(np.abs(data['Jint']), max(generated*10, 1e-12))))
         if relative_error > .005:
             warnings.append('归一化电流不均匀度超过 0.5%，建议增加网格点数并检查参数。')
-        return dict(voltage=v, current=j, metrics=metrics, warnings=warnings,
+        recoveries = _recovery_report(folder, warnings)
+        return dict(voltage=v, current=j, metrics=metrics, warnings=warnings, runtime_recoveries=recoveries,
                     generated_current=generated, elapsed=time.monotonic()-started,
                     max_current_error=float(np.max(data['errJ'])),
                     relative_current_error=relative_error,
@@ -559,12 +714,12 @@ def run_eqe(layers, settings, cancel=None, progress=None):
         base = np.interp(grid, spectrum[:, 0], spectrum[:, 1])*1e9*eqe['background_scale']
         _rewrite_setup(folder, dict(Vmin=0, Vmax=0, Vstep=.01, outputRatio=1, varFile='OpticalProfile.dat'))
 
-        def solve_spectrum(irradiance):
+        def solve_spectrum(irradiance, context):
             # Match the native rounded wavelength grid exactly: tiny positive
             # coordinate errors can make its linear interpolator miss a spike.
             np.savetxt(Path(folder)/'spectrum.txt', np.column_stack([grid*1e-9, irradiance]),
                        fmt=['%.9e', '%.16e'], header='lambda I', comments='')
-            data, _ = _run_engine(folder, settings, cancel, started)
+            data, _ = _run_engine(folder, settings, cancel, started, context=context)
             if len(data) != 1 or abs(data['Vext'][0]) > 1e-10:
                 raise RuntimeError('EQE 短路工作点输出不匹配')
             p = np.atleast_1d(np.genfromtxt(Path(folder)/'OpticalProfile.dat', names=True))
@@ -574,14 +729,14 @@ def run_eqe(layers, settings, cancel=None, progress=None):
 
         if progress:
             progress(0, len(wavelengths))
-        baseline, base_error, base_profile = solve_spectrum(base)
+        baseline, base_error, base_profile = solve_spectrum(base, 'EQE 背景计算')
         responses, absorption, noise = [], [], []
         for i, wavelength in enumerate(wavelengths):
             modified = base.copy()
             index = int(round(wavelength-grid[0]))
             # Native TMM sums 1-nm rectangular bins, including both endpoints.
             modified[index] += eqe['photon_flux_cm2_s']*1e4*h*c/(wavelength*1e-9)/1e-9
-            current, error, p = solve_spectrum(modified)
+            current, error, p = solve_spectrum(modified, f'EQE 第 {i+1}/{len(wavelengths)} 个波长（{wavelength:g} nm）')
             responses.append((current-baseline)/denominator)
             absorption.append(float(q*integrate(p['G_ehp']-base_profile['G_ehp'], p['x'])/10/denominator))
             noise.append((error+base_error)/denominator)
@@ -598,7 +753,8 @@ def run_eqe(layers, settings, cancel=None, progress=None):
             warnings.append('部分波长的数值误差估计超过 1 个百分点；请调整探测通量或网格。')
         if np.min(responses) < -.01 or np.max(responses) > 1.01:
             warnings.append('EQE 出现负值或超过 100%，请检查注入、增益及数值收敛。')
-        return dict(kind='eqe', wavelength_nm=wavelengths.tolist(), EQE=responses.tolist(),
+        recoveries = _recovery_report(folder, warnings)
+        return dict(kind='eqe', wavelength_nm=wavelengths.tolist(), EQE=responses.tolist(), runtime_recoveries=recoveries,
                     active_absorptance=absorption.tolist(), numerical_error_estimate=noise.tolist(),
                     baseline_Jsc=baseline, weighted_current_mA_cm2=weighted, eqe_settings=eqe,
                     layers=deepcopy(layers), settings=deepcopy(settings), optics=optical,

@@ -22,6 +22,41 @@ from performance import (DEFAULT_SETTINGS, EXTRA_FIELDS, ENGINE_VERSION,
                          run_eqe, loss_at_voltage, validate_eqe)
 
 
+def jv_export_figure(result, previous=None, limits=None):
+    """A fixed-size report whose four metrics belong to the exported solid curve."""
+    fig = Figure(figsize=(8.4, 6.4), facecolor='white')
+    fig.text(.12, .945, 'J–V 模拟结果', fontsize=16, fontweight='bold', color='#223b4b')
+    specs = [('Jsc', 'mA/cm²', 3), ('Voc', 'V', 4), ('FF', '%', 3), ('PCE', '%', 3)]
+    for x, (key, unit, decimals) in zip((.12, .335, .55, .765), specs):
+        value = result['metrics'][key]
+        fig.text(x, .875, key, fontsize=11, color='#586d78')
+        fig.text(x, .823, '—' if value is None else f'{value:.{decimals}f}',
+                 fontsize=19, fontweight='bold', color='#087e8b')
+        fig.text(x, .783, unit, fontsize=10, color='#586d78')
+    ax = fig.add_axes([.12, .15, .83, .57])
+    if previous is not None:
+        ax.plot(previous['voltage'], previous['current'], color='#a15d14', ls='--', lw=1.6, label='上次结果')
+    light = result.get('optics', {}).get('mode') == 'spectrum' or result['settings']['G'] > 0
+    ax.plot(result['voltage'], result['current'], color='#087e8b', lw=2,
+            label='本次光照 J–V' if light else '本次暗态 J–V')
+    m = result['metrics']
+    if m.get('Vmp') is not None:
+        ax.plot(m['Vmp'], m['Jmp'], 'o', color='#cd6930', label='最大功率点')
+    if limits is not None:
+        ax.set_xlim(limits[0])
+        ax.set_ylim(limits[1])
+    ax.axhline(0, color='#87929b', lw=.8)
+    ax.axvline(0, color='#87929b', lw=.8)
+    ax.set(xlabel='端电压 V (V)', ylabel='输出电流密度 J (mA/cm²)')
+    ax.grid(alpha=.2)
+    ax.legend(loc='best', fontsize=9)
+    s = result['settings']
+    fig.text(.12, .058, f"Pin = {s['pin']:g} mW/cm²   ·   T = {s['T']:g} K", fontsize=9, color='#586d78')
+    note = '四项参数对应本次实线曲线；— 表示尚未确认或不适用。'
+    fig.text(.12, .025, note, fontsize=9, color='#586d78')
+    return fig
+
+
 class PerformancePage(ttk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent, padding=10)
@@ -49,8 +84,8 @@ class PerformancePage(ttk.Frame):
         self.run_button = actions.button('▶ 运行 J–V 模拟', self.run, style='Accent.TButton')
         self.eqe_button = actions.button('运行 EQE', self.run_eqe)
         self.cancel_button = actions.button('取消', self.cancel, state='disabled')
-        self.export_buttons = [actions.menu('导出结果', [('当前曲线 CSV', self.export_csv),
-                                  ('完整结果 JSON', self.export_result), ('当前图像 PNG / SVG', self.export_image)], state='disabled')]
+        self.export_buttons = [actions.menu('导出结果', [('当前曲线与参数 CSV', self.export_csv),
+                                  ('完整结果 JSON', self.export_result), ('图像与参数 PNG / SVG', self.export_image)], state='disabled')]
 
         body = ttk.Panedwindow(self, orient='horizontal')
         body.pack(fill='both', expand=True)
@@ -816,8 +851,8 @@ class PerformancePage(ttk.Frame):
         elif kind == 'cancel' or self.cancel_event.is_set():
             self.status.set('模拟已取消，上次成功结果已保留。')
         else:
-            self.status.set('模拟失败，上次成功结果已保留；请修正参数后重试。')
-            self.warning.set('未采用未收敛的部分曲线。点击运行可重新计算。')
+            self.status.set('本次模拟失败，上次成功结果已保留；请查看错误详情。')
+            self.warning.set('未采用本次失败的部分结果；错误详情包含运行阶段和可用的诊断包位置。')
             messagebox.showerror('SimSS 计算失败', payload, parent=self)
 
     def plot(self):
@@ -1039,8 +1074,10 @@ class PerformancePage(ttk.Frame):
             table, header = np.column_stack(columns), ','.join(names)
         elif self.plot_view.get() == 'J–V 曲线':
             r = self.result
-            table = np.column_stack([r['voltage'], r['current']])
-            header = 'V_terminal_V,J_output_mA_cm2'
+            parameters = [np.full(len(r['voltage']), np.nan if r['metrics'][key] is None else r['metrics'][key])
+                          for key in ('Jsc', 'Voc', 'FF', 'PCE')]
+            table = np.column_stack([r['voltage'], r['current']]+parameters)
+            header = 'V_terminal_V,J_output_mA_cm2,Jsc_mA_cm2,Voc_V,FF_percent,PCE_percent'
         elif self.result.get('optics', {}).get('mode') != 'spectrum':
             messagebox.showinfo('尚无光学结果', '请运行光谱模式后导出光谱或光生分布。', parent=self)
             return
@@ -1077,7 +1114,12 @@ class PerformancePage(ttk.Frame):
         path = filedialog.asksaveasfilename(parent=self, defaultextension='.png', filetypes=[('PNG', '*.png'), ('SVG', '*.svg')])
         if path:
             try:
-                self.fig.savefig(path, dpi=200, bbox_inches='tight')
+                figure = self.fig
+                if self.plot_view.get() == 'J–V 曲线':
+                    previous = self.previous_result if self.show_previous.get() else None
+                    figure = jv_export_figure(self.result, previous,
+                                              limits=(self.ax.get_xlim(), self.ax.get_ylim()))
+                figure.savefig(path, dpi=200, bbox_inches='tight', facecolor='white')
             except OSError as e:
                 messagebox.showerror('保存失败', str(e), parent=self)
 
