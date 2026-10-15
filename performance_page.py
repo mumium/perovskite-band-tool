@@ -210,15 +210,14 @@ class PerformancePage(ttk.Frame):
 
         self.settings_header = ttk.Frame(right)
         self.settings_header.pack(fill='x')
-        self.settings_toggle = ttk.Button(self.settings_header, text='模拟设置 ▴', width=11, command=self.toggle_settings)
+        self.settings_toggle = ttk.Button(self.settings_header, text='模拟设置 ▾', width=11, command=self.toggle_settings)
         self.settings_toggle.pack(side='left', pady=(0, 3))
         self.mode_badge = tk.StringVar(value='AM1.5G · TMM 光学耦合')
         ttk.Label(self.settings_header, textvariable=self.mode_badge, foreground='#536c7c').pack(side='left', padx=8)
-        self.settings_visible = True
+        self.settings_visible = False
         self.compact = None
         settings_tabs = ttk.Notebook(right, height=150)
         self.settings_tabs = settings_tabs
-        settings_tabs.pack(fill='x')
         self.settings = {}
         groups = [
             ('光照与扫描', [('T', '温度', 'K'), ('G', '吸收层均匀光生率 G', 'cm⁻³·s⁻¹'),
@@ -524,10 +523,8 @@ class PerformancePage(ttk.Frame):
     def resize_right(self, event):
         for widget in (self.mpp_label, self.comparison_label, self.analysis_label):
             widget.configure(wraplength=max(200, event.width-20))
-        compact = event.height < 500
-        if compact != self.compact:
-            self.compact = compact
-            self.toggle_settings(not compact)
+        # Resizing after results arrive must not override the user's fold state.
+        self.compact = event.height < 500
 
     def loss_row_limit(self):
         return max(2, min(8, (self.canvas.get_tk_widget().winfo_height()-100)//24))
@@ -733,8 +730,7 @@ class PerformancePage(ttk.Frame):
             return
         self.task_kind = 'jv'
         self.set_running(True)
-        if self.compact:
-            self.toggle_settings(False)
+        self.toggle_settings(False)
         self.cancel_event = threading.Event()
         self.status.set('SimSS 正在后台计算… 上次结果保留至本次成功；可切换能带页或取消。')
         self.progress = ttk.Progressbar(self.footer, mode='indeterminate')
@@ -765,8 +761,7 @@ class PerformancePage(ttk.Frame):
             return
         self.task_kind = 'eqe'
         self.set_running(True)
-        if self.compact:
-            self.toggle_settings(False)
+        self.toggle_settings(False)
         self.cancel_event = threading.Event()
         self.status.set('正在计算 EQE 基线… J–V 与已有 EQE 结果保留至本次成功。')
         self.progress = ttk.Progressbar(self.footer, mode='determinate')

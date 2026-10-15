@@ -51,13 +51,18 @@ class PerformanceUI(unittest.TestCase):
 
     def test_real_background_run_exports_and_retained_result(self):
         p = self.page
+        self.assertFalse(p.settings_visible)
+        p.toggle_settings(True)
         p.settings['vmax'].set('1.25')
         p.run()
+        self.assertFalse(p.settings_visible)
         self.assertTrue(p.running)
         self.assertEqual(str(p.run_button['state']), 'disabled')
         self.wait_for_run()
         self.assertIsNotNone(p.result)
         self.assertGreater(p.result['metrics']['PCE'], 0)
+        self.assertFalse(p.settings_visible)
+        self.assertEqual(p.settings_tabs.winfo_manager(), '')
         with tempfile.TemporaryDirectory() as folder:
             csv = Path(folder)/'JV.csv'
             report = Path(folder)/'results.json'
@@ -95,20 +100,31 @@ class PerformanceUI(unittest.TestCase):
             p.run()
             self.wait_for_run()
         self.assertIs(p.result, latest)
+        self.assertFalse(p.settings_visible)
         p.run()
         p.cancel()
         self.wait_for_run()
         self.assertIs(p.result, latest)
+        self.assertFalse(p.settings_visible)
 
     def test_small_screen_and_gradient_roundtrip(self):
         p = self.page
+        from types import SimpleNamespace
+        self.assertFalse(p.settings_visible)
+        for height in (700, 400, 700):
+            p.resize_right(SimpleNamespace(width=900, height=height))
+            self.assertFalse(p.settings_visible)
         self.app.geometry('1024x650')
         self.app.update()
         self.assertGreater(p.canvas.get_tk_widget().winfo_height(), 100)
         self.assertLessEqual(p.footer.winfo_y()+p.footer.winfo_height(), p.winfo_height())
         self.assertGreaterEqual(p.run_button.winfo_height(), 45)
         self.assertEqual(float(p.settings['vstep'].get()), .02)
+        self.assertEqual(float(p.settings['rs'].get()), .3)
+        self.assertEqual(float(p.settings['rsh'].get()), 4e4)
         p.toggle_settings(True)
+        self.assertTrue(p.settings_visible)
+        p.resize_right(SimpleNamespace(width=900, height=700))
         self.assertTrue(p.settings_visible)
         p.vars['Eg_mode'].set('线性')
         p.vars['Eg_end'].set('3.1')
@@ -210,11 +226,13 @@ class PerformanceUI(unittest.TestCase):
                 p.export_csv()
             self.assertIn('interface_1_mA_cm2', path.read_text())
             p.run_eqe()
+            self.assertFalse(p.settings_visible)
             self.assertEqual(str(p.run_button['state']), 'disabled')
             self.wait_for_run()
             self.assertIs(p.result, jv)
             self.assertEqual(p.metric_vars['PCE'].get(), metric)
             self.assertEqual(p.plot_view.get(), 'EQE')
+            self.assertFalse(p.settings_visible)
             e = p.eqe_result
             path = Path(folder)/'eqe.csv'
             with patch('performance_page.filedialog.asksaveasfilename', return_value=str(path)):

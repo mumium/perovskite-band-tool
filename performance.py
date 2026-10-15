@@ -18,6 +18,7 @@ import time
 import uuid
 
 import numpy as np
+from scipy.optimize import brentq
 
 from physics import normalize, profile, validate
 from optics import get_optics, default_nk, validate_optics, prepare_optical_files, integrate, optical_model
@@ -28,7 +29,7 @@ ENGINE_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / '
 DEFAULT_SETTINGS = dict(T=300., left=5., right=4.1, left_anode=1,
                         G=3e21, pin=100., vmin=-.04, vmax=1.5, vstep=.02,
                         sn_left=0., sp_left=1e7, sn_right=1e7, sp_right=0.,
-                        rs=0., rsh=1e6, points=250, timeout=120, grading_slices=16)
+                        rs=0.3, rsh=4e4, points=250, timeout=120, grading_slices=16)
 EXTRA_FIELDS = [('Nt', '中性体陷阱浓度 Nt', 'cm⁻³'),
                 ('Et', '陷阱位置 Et − Ev', 'eV'),
                 ('B', '双分子复合系数 B', 'cm³/s'),
@@ -694,6 +695,44 @@ def _rewrite_setup(folder, replacements):
     path.write_text(text, encoding='ascii')
 
 
+def _eqe_short_circuit(folder, settings, cancel, started, context, guess=0.):
+    """Solve Vext = Vint + Rs*Jext = 0, retaining the actual series/shunt resistors."""
+    last_voltage, last_data = None, None
+    samples = {}
+    def evaluate(voltage):
+        nonlocal last_voltage, last_data
+        voltage = float(voltage)
+        if voltage not in samples:
+            _rewrite_setup(folder, dict(Vmin=voltage, Vmax=voltage))
+            data, _ = _run_engine(folder, settings, cancel, started, context=context)
+            if len(data) != 1:
+                raise RuntimeError('EQE 单工作点输出不匹配')
+            samples[voltage] = data
+            last_voltage, last_data = voltage, data
+        return float(samples[voltage]['Vext'][0])
+    guess = float(guess)
+    initial = evaluate(guess)
+    if abs(initial) <= 1e-10:
+        return last_data, guess
+    direction = -np.sign(initial)
+    step = max(.02, min(abs(initial), .2))
+    for _ in range(10):
+        other = guess+direction*step
+        residual = evaluate(other)
+        if initial*residual <= 0:
+            lo, hi = sorted((guess, other))
+            root = brentq(evaluate, lo, hi, xtol=1e-12, rtol=1e-12, maxiter=40)
+            if root != last_voltage:
+                # The retained profile must belong to the accepted root too.
+                samples.pop(root, None)
+                evaluate(root)
+            if abs(float(last_data['Vext'][0])) > 1e-9:
+                raise RuntimeError('EQE 端电压未达到短路条件，请检查电阻和接触设置')
+            return last_data, float(root)
+        step *= 2
+    raise RuntimeError('EQE 无法找到端电压为零的短路工作点，请检查电阻和接触设置')
+
+
 def run_eqe(layers, settings, cancel=None, progress=None):
     """Differential short-circuit EQE: background + a single 1-nm photon bin.
 
@@ -714,14 +753,15 @@ def run_eqe(layers, settings, cancel=None, progress=None):
         base = np.interp(grid, spectrum[:, 0], spectrum[:, 1])*1e9*eqe['background_scale']
         _rewrite_setup(folder, dict(Vmin=0, Vmax=0, Vstep=.01, outputRatio=1, varFile='OpticalProfile.dat'))
 
+        short_circuit_guess = 0.
         def solve_spectrum(irradiance, context):
+            nonlocal short_circuit_guess
             # Match the native rounded wavelength grid exactly: tiny positive
             # coordinate errors can make its linear interpolator miss a spike.
             np.savetxt(Path(folder)/'spectrum.txt', np.column_stack([grid*1e-9, irradiance]),
                        fmt=['%.9e', '%.16e'], header='lambda I', comments='')
-            data, _ = _run_engine(folder, settings, cancel, started, context=context)
-            if len(data) != 1 or abs(data['Vext'][0]) > 1e-10:
-                raise RuntimeError('EQE 短路工作点输出不匹配')
+            data, short_circuit_guess = _eqe_short_circuit(
+                folder, settings, cancel, started, context, guess=short_circuit_guess)
             p = np.atleast_1d(np.genfromtxt(Path(folder)/'OpticalProfile.dat', names=True))
             if len(p) != mesh['effective_points']+2 or not np.all(np.isfinite(p['G_ehp'])):
                 raise RuntimeError('EQE 光生分布不完整')

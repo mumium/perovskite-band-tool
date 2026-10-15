@@ -5,6 +5,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -13,6 +14,7 @@ from optics import effective_nk, nk_table, optical_model, HC_EV_NM, get_optics
 from performance import (DEFAULT_SETTINGS, ENGINE_DIR, SimulationCancelled, import_layers,
                          write_inputs, validate_device, run_simulation, run_eqe, loss_at_voltage,
                          _reverse_for_illumination, _rewrite_setup, _run_engine, integrate)
+from performance import _eqe_short_circuit
 from test_performance import values
 
 
@@ -71,6 +73,27 @@ class AnalysisInputs(unittest.TestCase):
             a.pop('interface')
             a.pop('optical_model')
         validate_device(self.layers, self.settings)
+
+    def test_eqe_external_short_circuit_with_nonzero_series_resistance(self):
+        # An independent linear device has Jext = J0 + conductance * Vint.
+        # Its terminal short circuit is analytic, and differs from Vint = 0.
+        settings = dict(self.settings, rs=.3, rsh=4e4)
+        rs_si, j0, conductance = settings['rs']*1e-4, -200., 2e4
+        def linear_device(folder, settings, cancel, started, context):
+            voltage = float(values(Path(folder)/'simulation_setup.txt')['Vmin'])
+            current = j0+conductance*voltage
+            data = np.array([(voltage+rs_si*current, current, 0.)],
+                            dtype=[('Vext', float), ('Jext', float), ('errJ', float)])
+            return data, ''
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder)/'simulation_setup.txt').write_text('Vmin = 0\nVmax = 0\n', encoding='ascii')
+            with patch('performance._run_engine', side_effect=linear_device):
+                data, internal = _eqe_short_circuit(folder, settings, None, 0., 'test EQE')
+            self.assertAlmostEqual(internal, -rs_si*j0/(1+rs_si*conductance), places=10)
+            self.assertAlmostEqual(float(data['Jext'][0]), j0/(1+rs_si*conductance), places=8)
+            self.assertLess(abs(float(data['Vext'][0])), 1e-9)
+            self.assertEqual(settings['rs'], .3)
+            self.assertEqual(settings['rsh'], 4e4)
 
 
 @unittest.skipUnless(sys.platform == 'win32' and (ENGINE_DIR/'simss.exe').exists(), 'Windows SimSS required')
@@ -137,11 +160,11 @@ class NativeAnalysis(unittest.TestCase):
         layers[1]['Eg'] = 1.8
         high_gap = run_eqe(layers, settings)
         self.assertGreater(high_gap['EQE'][2], .1)
-        self.assertEqual(high_gap['EQE'][-2], 0)  # 700 nm below bandgap
+        self.assertAlmostEqual(high_gap['EQE'][-2], 0., places=10)  # 700 nm below bandgap; root-solve roundoff
         self.assertLess(max(e['numerical_error_estimate']), .01)
 
     def test_dark_eqe_matches_independent_single_wavelength_native_run(self):
-        settings = dict(self.settings, eqe=dict(step_nm=100, background_scale=0))
+        settings = dict(self.settings, rs=0., eqe=dict(step_nm=100, background_scale=0))
         e = run_eqe(self.layers, settings)
         lam = 500e-9
         flux = e['eqe_settings']['photon_flux_cm2_s']*1e4
