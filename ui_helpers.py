@@ -20,6 +20,9 @@ def configure_theme(root):
                     foreground='white', padding=(16, 10), bordercolor='#087e8b')
     style.map('Accent.TButton', background=[('disabled', '#91b8bd'), ('active', '#056773')],
               foreground=[('disabled', '#e9f3f4')])
+    style.configure('EQE.Accent.TButton', background='#7651a8', bordercolor='#7651a8')
+    style.map('EQE.Accent.TButton', background=[('disabled', '#b8a5d0'), ('active', '#5d398c')],
+              foreground=[('disabled', '#f0eaf7')])
     style.configure('TMenubutton', width=0, padding=(10, 7), background='#f3f6fa', bordercolor='#d6e0e8', relief='flat')
     style.configure('TEntry', padding=(5, 4), fieldbackground='#fbfdff', bordercolor='#d6e0e8')
     style.configure('TCombobox', padding=(4, 4), fieldbackground='#fbfdff', bordercolor='#d6e0e8')

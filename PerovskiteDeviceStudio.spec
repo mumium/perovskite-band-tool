@@ -6,7 +6,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets', 'assets'), ('vendor/simsalabim', 'vendor/simsalabim')],
+    datas=[('assets', 'assets'), ('vendor/simsalabim', 'vendor/simsalabim'), ('device_structures', 'device_structures')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

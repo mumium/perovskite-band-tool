@@ -20,6 +20,7 @@ from analysis_views import analysis_segments, interface_offsets, sample_position
 from performance_page import PerformancePage
 from app_info import APP_NAME, APP_ENGLISH_NAME
 from ui_helpers import ScrollableFrame, FlowToolbar, configure_theme
+from device_structure import DeviceStructure, preview_layers
 
 class App(tk.Tk):
     def __init__(self):
@@ -54,7 +55,7 @@ class App(tk.Tk):
             self.after_idle(lambda:body.sashpos(0,350))
         body.bind('<Map>',initial_split)
         ttk.Label(left,text='材料层（从左电极到右电极）',font=('Microsoft YaHei',11,'bold')).pack(anchor='w')
-        self.listbox=tk.Listbox(left,height=4,exportselection=False,font=('Microsoft YaHei',10),
+        self.listbox=tk.Listbox(left,height=5,exportselection=False,font=('Microsoft YaHei',10),
                                 bg='#f6f9fc',fg='#223b4b',selectbackground='#087e8b',selectforeground='white',
                                 relief='flat',highlightthickness=1,highlightbackground='#dce5ec')
         self.listbox.pack(fill='x',pady=6); self.listbox.bind('<<ListboxSelect>>',self.select)
@@ -98,6 +99,11 @@ class App(tk.Tk):
         ttk.Label(grading,text='拖动会切换到「独立端点」，同步 Eg、χ。\n掺杂线性允许零浓度；对数两端须为正。',justify='left').pack(anchor='w',pady=6)
         note=ttk.Label(left,text='迁移率与寿命用于性能页，热平衡页只保存。\n示例参数仅用于演示。',foreground='#805c16')
         note.pack(side='bottom',anchor='w',pady=4,before=notebook)
+        self.structure_direction=tk.StringVar(value='左侧入射')
+        self.structure=DeviceStructure(body,direction_variable=self.structure_direction)
+        self.structure.pack(in_=right,fill='x',pady=(0,4))
+        self.structure.host=right
+        self.structure_direction.trace_add('write',self.update_structure)
         controls=ttk.LabelFrame(right,text='求解条件',padding=10); controls.pack(fill='x',pady=(0,7))
         self.mode=tk.StringVar(value='热平衡弯曲能带')
         ttk.Label(controls,text='能带模型').grid(row=0,column=0,sticky='w',padx=3)
@@ -127,7 +133,10 @@ class App(tk.Tk):
         self.hover_text=tk.StringVar(value='将鼠标移到图中查看该位置的数值。\n')
         hover_label=ttk.Label(right,textvariable=self.hover_text,foreground='#245565',wraplength=850,justify='left')
         hover_label.pack(fill='x',pady=(0,5))
-        right.bind('<Configure>',lambda e:[w.configure(wraplength=max(200,e.width-20)) for w in (drag_label,hover_label)])
+        def resize_band_right(event):
+            for widget in (drag_label,hover_label):widget.configure(wraplength=max(200,event.width-20))
+            self.structure.fit_height(event.height,left,right,notebook,controls)
+        right.bind('<Configure>',resize_band_right)
         self.fig=Figure(figsize=(8,6),dpi=100); self.fig.set_layout_engine('tight',pad=1.5)
         self.ax=self.fig.add_subplot(111)
         self.canvas=FigureCanvasTkAgg(self.fig,master=right)
@@ -159,6 +168,13 @@ class App(tk.Tk):
         self.listbox.delete(0,'end')
         for a in self.layers:self.listbox.insert('end',f"{a['name']}   |   {a['thickness']:g} nm")
         self.listbox.selection_set(self.index)
+        self.listbox.see(self.index)
+        self.update_structure()
+
+    def update_structure(self,*_):
+        if hasattr(self,'structure'):
+            layers=preview_layers(self.layers,self.index,self.vars) if hasattr(self,'vars') else self.layers
+            self.structure.set_layers(layers,'right' if self.structure_direction.get()=='右侧入射' else 'left',self.index)
 
     def show_fields(self):
         self.busy=True
@@ -166,6 +182,7 @@ class App(tk.Tk):
         for k,v in self.vars.items():v.set(self.layers[self.index][k] if k=='name' or k.endswith('_mode') else f'{self.layers[self.index][k]:.12g}')
         self.busy=False
         self.update_band_controls()
+        self.update_structure()
 
     def update_band_controls(self):
         independent=self.vars['affinity_mode'].get()=='独立端点'
@@ -185,6 +202,7 @@ class App(tk.Tk):
 
     def schedule(self,*_):
         if self.busy:return
+        self.update_structure()
         if self.drag:self.cancel_drag()
         self.drag_history.clear()
         self.update_band_controls()
@@ -435,7 +453,8 @@ class App(tk.Tk):
         try:s=self.commit()
         except Exception as e:messagebox.showerror('参数错误',str(e));return
         p=filedialog.asksaveasfilename(defaultextension='.json',filetypes=[('参数项目','*.json')])
-        if p:Path(p).write_text(json.dumps(dict(schema=3,layers=self.layers,settings=s,mode=self.mode.get()),ensure_ascii=False,indent=2),encoding='utf-8')
+        if p:Path(p).write_text(json.dumps(dict(schema=3,layers=self.layers,settings=s,mode=self.mode.get(),
+                                              structure_illumination='right' if self.structure_direction.get()=='右侧入射' else 'left'),ensure_ascii=False,indent=2),encoding='utf-8')
 
     def load(self):
         p=filedialog.askopenfilename(filetypes=[('参数项目','*.json')])
@@ -447,6 +466,8 @@ class App(tk.Tk):
             validate(data['layers'],s['T'],s['left'],s['right'])
             self.busy=True;self.layers=data['layers'];self.index=0
             for k,v in self.settings.items():v.set(s[k])
+            direction=data.get('structure_illumination',s.get('optics',{}).get('illumination','left'))
+            self.structure_direction.set('右侧入射' if direction=='right' else '左侧入射')
             self.mode.set(data.get('mode','热平衡弯曲能带'));self.snapshot=None
             self.drag_history.clear()
             self.busy=False;self.refresh_list();self.show_fields();self.calculate()

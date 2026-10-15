@@ -14,6 +14,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 
 from physics import FIELDS, layer
 from ui_helpers import ScrollableFrame, FlowToolbar
+from device_structure import DeviceStructure, preview_layers, STRUCTURES_DIR
 from optics import (NK_LIBRARY, OPTICS_DEFAULTS, get_optics, default_nk,
                     nk_table, read_csv, spectrum_table, optical_model)
 from performance import (DEFAULT_SETTINGS, EXTRA_FIELDS, ENGINE_VERSION,
@@ -81,8 +82,8 @@ class PerformancePage(ttk.Frame):
                                ('打开参数', self.load), ('保存参数', self.save)]:
             button = actions.button(title, command)
             self.input_widgets.append(button)
-        self.run_button = actions.button('▶ 运行 J–V 模拟', self.run, style='Accent.TButton')
-        self.eqe_button = actions.button('运行 EQE', self.run_eqe)
+        self.run_button = actions.button('▶ 运行 J–V 模拟', self.run, style='Accent.TButton', width=17)
+        self.eqe_button = actions.button('▶ 运行 EQE 模拟', self.run_eqe, style='EQE.Accent.TButton', width=17)
         self.cancel_button = actions.button('取消', self.cancel, state='disabled')
         self.export_buttons = [actions.menu('导出结果', [('当前曲线与参数 CSV', self.export_csv),
                                   ('完整结果 JSON', self.export_result), ('图像与参数 PNG / SVG', self.export_image)], state='disabled')]
@@ -98,7 +99,7 @@ class PerformancePage(ttk.Frame):
             self.after_idle(lambda: body.sashpos(0, 365))
         body.bind('<Map>', initial_split)
         ttk.Label(left, text='材料层（从左电极到右电极）', font=('Microsoft YaHei', 10, 'bold')).pack(anchor='w')
-        self.listbox = tk.Listbox(left, height=3, exportselection=False, bg='#f6f9fc', fg='#223b4b',
+        self.listbox = tk.Listbox(left, height=5, exportselection=False, font=('Microsoft YaHei', 10), bg='#f6f9fc', fg='#223b4b',
                                   selectbackground='#087e8b', selectforeground='white', relief='flat',
                                   highlightthickness=1, highlightbackground='#dce5ec')
         self.listbox.pack(fill='x', pady=5)
@@ -115,6 +116,8 @@ class PerformancePage(ttk.Frame):
         ttk.Label(left, textvariable=self.grading_note, foreground='#a15d14', wraplength=380).pack(anchor='w', pady=4)
 
         layer_tabs = ttk.Notebook(left)
+        self.layer_tabs = layer_tabs
+        self.left = left
         layer_tabs.pack(fill='both', expand=True)
         self.parameter_scroll = ScrollableFrame(layer_tabs, width=345)
         layer_tabs.add(self.parameter_scroll, text='材料')
@@ -208,6 +211,9 @@ class PerformancePage(ttk.Frame):
         layer_tabs.add(interface_tab, text='界面')
         self.build_interface_form(interface_tab.content)
 
+        self.structure = DeviceStructure(body)
+        self.structure.pack(in_=right, fill='x', pady=(0, 4))
+        self.structure.host = right
         self.settings_header = ttk.Frame(right)
         self.settings_header.pack(fill='x')
         self.settings_toggle = ttk.Button(self.settings_header, text='模拟设置 ▾', width=11, command=self.toggle_settings)
@@ -506,6 +512,7 @@ class PerformancePage(ttk.Frame):
     def mark_dirty(self, *_):
         if self.loading:
             return
+        self.update_structure()
         self.dirty = True
         self.status.set('参数已修改；当前曲线、指标及导出仍对应上次成功计算。点击右上方运行以更新。'
                         if self.result is not None else '参数已修改，请点击右上方「运行 J–V 模拟」。')
@@ -525,6 +532,7 @@ class PerformancePage(ttk.Frame):
             widget.configure(wraplength=max(200, event.width-20))
         # Resizing after results arrive must not override the user's fold state.
         self.compact = event.height < 500
+        self.structure.fit_height(event.height, self.left, self.right, self.layer_tabs, self.settings_header)
 
     def loss_row_limit(self):
         return max(2, min(8, (self.canvas.get_tk_widget().winfo_height()-100)//24))
@@ -559,6 +567,13 @@ class PerformancePage(ttk.Frame):
         for a in self.layers:
             self.listbox.insert('end', f"{'☀ ' if a.get('absorber') else ''}{a['name']}  |  {a['thickness']:g} nm")
         self.listbox.selection_set(self.index)
+        self.listbox.see(self.index)
+        self.update_structure()
+
+    def update_structure(self):
+        if hasattr(self, 'structure') and hasattr(self, 'illumination'):
+            self.structure.set_layers(preview_layers(self.layers, self.index, self.vars),
+                                      'right' if self.illumination.get() == '右侧入射' else 'left', self.index)
 
     def show_fields(self):
         previous = self.loading
@@ -590,6 +605,7 @@ class PerformancePage(ttk.Frame):
                                 a['name']+' → '+self.layers[self.index+1]['name'])
         self.update_interface_controls()
         self.loading = previous
+        self.update_structure()
 
     def commit_layer(self):
         a = deepcopy(self.layers[self.index])
@@ -1012,7 +1028,7 @@ class PerformancePage(ttk.Frame):
                 messagebox.showerror('保存失败', str(e), parent=self)
 
     def load(self):
-        path = filedialog.askopenfilename(parent=self, filetypes=[('性能参数', '*.json')])
+        path = filedialog.askopenfilename(parent=self, initialdir=str(STRUCTURES_DIR), filetypes=[('性能参数', '*.json')])
         if not path:
             return
         try:

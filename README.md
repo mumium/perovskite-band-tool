@@ -2,9 +2,9 @@
 
 <img src="assets/logo.png" width="96" alt="钙钛矿器件模拟工作台图标">
 
-Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两个独立页面。能带页查看真空参考排列、自洽热平衡能带、电场与载流子浓度；性能页用 SimSS 计算均匀或渐变器件的稳态 J–V、Jsc、Voc、FF、PCE。版本 **1.3.2**。
+Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两个独立页面。能带页查看真空参考排列、自洽热平衡能带、电场与载流子浓度；性能页用 SimSS 计算均匀或渐变器件的稳态 J–V、Jsc、Voc、FF、PCE。版本 **1.3.3**。
 
-1.3.2 更新：默认串联电阻改为 0.3 Ω·cm²、并联电阻改为 4×10⁴ Ω·cm²，修复非零串联电阻下的 EQE 短路工作点，并让模拟设置在运行前后保持折叠。保留 226 异常有限恢复、固定位置求解器副本、失败诊断、曲线与四参数导出，以及界面复合、损失分析、光谱与渐变模拟。详见 [更新记录](CHANGELOG.md)。
+1.3.3 更新：两个页面的材料列表显示 5 行，新增随当前输入更新的器件结构图，标注名称、厚度及入射方向；小窗口自动调整结构图位置。J–V / EQE 运行按钮大小一致，分别使用青色与紫色。新增 [器件结构参数库](device_structures/README.md)，收录 Air 入射、3.0→1.53 eV 渐变器件的原始参数。详见 [更新记录](CHANGELOG.md)。
 
 ![能带模拟页面](preview_band_studio.png)
 
@@ -12,9 +12,17 @@ Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两
 
 Windows 打包版：双击 `dist/PerovskiteDeviceStudio.exe`，无需安装 Python 或 SimSS。可单独复制 EXE 到其他 Windows 64 位电脑运行。旧版 `PerovskiteBandTool.exe` 不再作为当前版本入口。
 
-[下载 Windows 1.3.2 单文件版](https://github.com/mumium/perovskite-band-tool/releases/download/v1.3.2/PerovskiteDeviceStudio.exe) · [下载文件夹版 ZIP](https://github.com/mumium/perovskite-band-tool/releases/download/v1.3.2/PerovskiteDeviceStudio-1.3.2-portable.zip) · [版本发布页](https://github.com/mumium/perovskite-band-tool/releases/tag/v1.3.2)
+[下载 Windows 1.3.3 单文件版](https://github.com/mumium/perovskite-band-tool/releases/download/v1.3.3/PerovskiteDeviceStudio.exe) · [下载文件夹版 ZIP](https://github.com/mumium/perovskite-band-tool/releases/download/v1.3.3/PerovskiteDeviceStudio-1.3.3-portable.zip) · [版本发布页](https://github.com/mumium/perovskite-band-tool/releases/tag/v1.3.3)
 
 重新打包：安装项目依赖及 `pyinstaller`，再运行 `build_exe.bat`。程序为单文件无控制台版本，首次启动需要解压运行依赖，可能稍慢。
+
+## 器件结构与参数文件
+
+可复用结构统一保存在 [device_structures](device_structures/README.md)，以后新增 JSON 可继续加入此目录。性能页「打开参数」默认浏览这个目录，打包版也内置该参数库。
+
+两个页面的左侧材料列表可一次显示 5 层；结构图按左到右顺序显示当前层的名称和厚度，选中层高亮。修改名称或厚度会即时更新结构图，增删、排序、导入和打开参数后同步更新。方块宽度为示意，实际厚度以标注为准；层数较多时支持横向滚动。窗口较矮时，结构图移到左侧编辑区，为结果曲线留出空间。
+
+性能页箭头跟随「光谱与光学 → 照射方向」；能带页可单独选择示意方向，并随能带项目保存，**能带求解仍为暗态**。结构图对应当前编辑输入，保留的 J–V / EQE 曲线仍对应最近成功计算的参数快照。
 
 ## 器件性能模拟
 
