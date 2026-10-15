@@ -4,7 +4,7 @@
 
 Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两个独立页面。能带页查看真空参考排列、自洽热平衡能带、电场与载流子浓度；性能页用 SimSS 计算均匀或渐变器件的稳态 J–V、Jsc、Voc、FF、PCE。版本 **1.3.1**。
 
-本版新增：真实材料界面陷阱与复合、吸收边随带隙近似联动、逐层/逐界面损失分析，以及包含输运与复合的短路微分 EQE。默认光学基底 ITO、背电极 Ag、前透明电极 200 nm，修复选项卡点击后的尺寸变化。保留 AM1.5G、自定义光谱与 n,k、手动 G、渐变参数和成功结果快照。详见 [更新记录](CHANGELOG.md)。
+1.3.1 更新：J–V 与 EQE 的 226 异常有限恢复、固定位置求解器副本、完整失败诊断，以及包含曲线和 Jsc、Voc、FF、PCE 的 J–V 图片与数据导出。保留界面陷阱复合、吸收边联动、损失分析、EQE、AM1.5G、自定义光谱与 n,k、手动 G、渐变参数和成功结果快照。详见 [更新记录](CHANGELOG.md)。
 
 ![能带模拟页面](preview_band_studio.png)
 
@@ -12,7 +12,7 @@ Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两
 
 Windows 打包版：双击 `dist/PerovskiteDeviceStudio.exe`，无需安装 Python 或 SimSS。可单独复制 EXE 到其他 Windows 64 位电脑运行。旧版 `PerovskiteBandTool.exe` 不再作为当前版本入口。
 
-[下载 Windows 1.3.0 单文件版](https://github.com/mumium/perovskite-band-tool/releases/download/v1.3.0/PerovskiteDeviceStudio.exe) · [版本发布页](https://github.com/mumium/perovskite-band-tool/releases/tag/v1.3.0)
+[下载 Windows 1.3.1 单文件版](https://github.com/mumium/perovskite-band-tool/releases/download/v1.3.1/PerovskiteDeviceStudio.exe) · [下载文件夹版 ZIP](https://github.com/mumium/perovskite-band-tool/releases/download/v1.3.1/PerovskiteDeviceStudio-1.3.1-portable.zip) · [版本发布页](https://github.com/mumium/perovskite-band-tool/releases/tag/v1.3.1)
 
 重新打包：安装项目依赖及 `pyinstaller`，再运行 `build_exe.bat`。程序为单文件无控制台版本，首次启动需要解压运行依赖，可能稍慢。
 
@@ -173,3 +173,5 @@ EQE 与 J–V 各自保存最近成功快照；**四项指标始终属于最近 
 - 「图像与参数 PNG / SVG」生成固定尺寸报告，包含 J–V 曲线、Jsc（mA/cm²）、Voc（V）、FF（%）、PCE（%）、入射功率和温度。参数对应本次实线曲线；若显示上次结果，则保留虚线对照。未确认或不适用的指标用 — 表示。
 - 「当前曲线与参数 CSV」前两列保留电压、电流，增加四项参数列；每行记录同一曲线的参数，NaN 表示未确认或不适用。
 - 「完整结果 JSON」保留曲线、四项参数及完整计算快照。修改页面输入不会改变上一次成功结果的导出内容。
+
+![J–V 曲线与四项参数导出示例](preview_jv_export.png)
