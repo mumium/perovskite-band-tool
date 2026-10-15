@@ -6,8 +6,9 @@ import sys
 import tkinter as tk
 from tkinter import ttk
 from tkinter.font import Font
+from .paths import RESOURCE_ROOT
 
-STRUCTURES_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))/'device_structures'
+STRUCTURES_DIR = RESOURCE_ROOT/'device_structures'
 
 
 class DeviceStructure(ttk.Frame):

@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 import numpy as np
 from matplotlib.backend_bases import MouseEvent
-from app import App
+from perovskite_studio.app import App
 
 class DragUI(unittest.TestCase):
     def setUp(self):
@@ -66,13 +66,13 @@ class DragUI(unittest.TestCase):
         np.testing.assert_allclose(a.result['Ec']-a.result['Ev'],a.result['Eg'])
         old=deepcopy(a.layers)
         self.drag('Ev','left',-.1,release=False)
-        original_solve=__import__('app').solve
+        original_solve=__import__('perovskite_studio.app',fromlist=['solve']).solve
         calls=[0]
         def fail_once(*args,**kwargs):
             calls[0]+=1
             if calls[0]==1:raise ValueError('test convergence failure')
             return original_solve(*args,**kwargs)
-        with patch('app.solve',side_effect=fail_once):a.drag_release(None)
+        with patch('perovskite_studio.app.solve',side_effect=fail_once):a.drag_release(None)
         self.assertEqual(a.layers,old)
         self.assertIsNotNone(a.result)
         self.assertIn('恢复',a.status.get())
@@ -82,13 +82,13 @@ class DragUI(unittest.TestCase):
         expected=deepcopy(a.layers)
         with tempfile.TemporaryDirectory() as folder:
             project=Path(folder)/'project.json'
-            with patch('app.filedialog.asksaveasfilename',return_value=str(project)):a.save()
+            with patch('perovskite_studio.app.filedialog.asksaveasfilename',return_value=str(project)):a.save()
             self.assertEqual(json.loads(project.read_text(encoding='utf-8'))['schema'],3)
-            with patch('app.filedialog.askopenfilename',return_value=str(project)):a.load()
+            with patch('perovskite_studio.app.filedialog.askopenfilename',return_value=str(project)):a.load()
             self.assertEqual(a.layers,expected)
             for method,name in ((a.export_params,'parameters.csv'),(a.export_curve,'curve.csv')):
                 path=Path(folder)/name
-                with patch('app.filedialog.asksaveasfilename',return_value=str(path)):method()
+                with patch('perovskite_studio.app.filedialog.asksaveasfilename',return_value=str(path)):method()
                 self.assertIn('χ' if name=='parameters.csv' else 'chi_eV',path.read_text(encoding='utf-8-sig'))
 
     def test_hover_and_interface_annotations(self):
@@ -120,7 +120,7 @@ class DragUI(unittest.TestCase):
             self.assertTrue(any('对照' in line.get_label() for line in a.ax.lines))
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'curve.csv'
-            with patch('app.filedialog.asksaveasfilename',return_value=str(path)):a.export_curve()
+            with patch('perovskite_studio.app.filedialog.asksaveasfilename',return_value=str(path)):a.export_curve()
             data=np.genfromtxt(path,delimiter=',',names=True)
             self.assertIn('E_V_per_cm',data.dtype.names)
             expected=np.concatenate([s['field'][1:-1] for s in a.segments])

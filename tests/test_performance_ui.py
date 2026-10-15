@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 
-from app import App
+from perovskite_studio.app import App
 
 
 class PerformanceUI(unittest.TestCase):
@@ -39,11 +39,11 @@ class PerformanceUI(unittest.TestCase):
         self.assertEqual(self.app.layers, original)
         self.assertEqual(p.layers[0]['mun'], 7)
         with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder)/'performance.json'
-            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(path)):
+            path = Path(folder)/'perovskite_studio.performance.json'
+            with patch('perovskite_studio.performance_page.filedialog.asksaveasfilename', return_value=str(path)):
                 p.save()
             p.vars['mun'].set('9')
-            with patch('performance_page.filedialog.askopenfilename', return_value=str(path)):
+            with patch('perovskite_studio.performance_page.filedialog.askopenfilename', return_value=str(path)):
                 p.load()
             self.assertEqual(float(p.vars['mun'].get()), 7)
         p.import_from_band()
@@ -68,7 +68,7 @@ class PerformanceUI(unittest.TestCase):
             report = Path(folder)/'results.json'
             image = Path(folder)/'JV.png'
             for method, path in ((p.export_csv, csv), (p.export_result, report), (p.export_image, image)):
-                with patch('performance_page.filedialog.asksaveasfilename', return_value=str(path)):
+                with patch('perovskite_studio.performance_page.filedialog.asksaveasfilename', return_value=str(path)):
                     method()
                 self.assertTrue(path.is_file())
             data = json.loads(report.read_text(encoding='utf-8'))
@@ -96,7 +96,7 @@ class PerformanceUI(unittest.TestCase):
         self.assertIn('ΔPCE', p.comparison_text.get())
         p.settings['G'].set('1e21')
         latest = p.result
-        with patch('performance_page.run_simulation', side_effect=ValueError('test failure')), patch('performance_page.messagebox.showerror'):
+        with patch('perovskite_studio.performance_page.run_simulation', side_effect=ValueError('test failure')), patch('perovskite_studio.performance_page.messagebox.showerror'):
             p.run()
             self.wait_for_run()
         self.assertIs(p.result, latest)
@@ -135,10 +135,10 @@ class PerformanceUI(unittest.TestCase):
         self.assertEqual(p.layers[0]['chi_end'], 2.05)
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder)/'gradient.json'
-            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(path)):
+            with patch('perovskite_studio.performance_page.filedialog.asksaveasfilename', return_value=str(path)):
                 p.save()
             p.vars['Eg_mode'].set('均匀')
-            with patch('performance_page.filedialog.askopenfilename', return_value=str(path)):
+            with patch('perovskite_studio.performance_page.filedialog.askopenfilename', return_value=str(path)):
                 p.load()
             self.assertEqual(p.vars['Eg_mode'].get(), '线性')
             self.assertEqual(float(p.vars['chi_end'].get()), 2.05)
@@ -151,7 +151,7 @@ class PerformanceUI(unittest.TestCase):
         self.assertIsNone(p.result)
         self.assertIn('取消', p.status.get())
         p.settings['vstep'].set('0')
-        with patch('performance_page.messagebox.showerror') as error:
+        with patch('perovskite_studio.performance_page.messagebox.showerror') as error:
             p.run()
         error.assert_called_once()
         self.assertFalse(p.running)
@@ -164,14 +164,14 @@ class PerformanceUI(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             nk_path = Path(folder)/'nk.csv'
             nk_path.write_text('wavelength_nm,n,k\n300,1.7,0.01\n800,1.7,0.01\n')
-            with patch('performance_page.filedialog.askopenfilename', return_value=str(nk_path)):
+            with patch('perovskite_studio.performance_page.filedialog.askopenfilename', return_value=str(nk_path)):
                 p.import_layer_nk()
             self.assertEqual(p.layers[0]['optical_nk']['kind'], 'custom')
             project = Path(folder)/'optical.json'
-            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(project)):
+            with patch('perovskite_studio.performance_page.filedialog.asksaveasfilename', return_value=str(project)):
                 p.save()
             nk_path.unlink()
-            with patch('performance_page.filedialog.askopenfilename', return_value=str(project)):
+            with patch('perovskite_studio.performance_page.filedialog.askopenfilename', return_value=str(project)):
                 p.load()
             self.assertEqual(p.optical_mode.get(), '光谱 · TMM')
             p.run()
@@ -182,11 +182,11 @@ class PerformanceUI(unittest.TestCase):
                 p.plot_view.set(view)
                 p.plot()
                 path = Path(folder)/(view+'.csv')
-                with patch('performance_page.filedialog.asksaveasfilename', return_value=str(path)):
+                with patch('perovskite_studio.performance_page.filedialog.asksaveasfilename', return_value=str(path)):
                     p.export_csv()
                 self.assertIn(header, path.read_text())
             report = Path(folder)/'result.json'
-            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(report)):
+            with patch('perovskite_studio.performance_page.filedialog.asksaveasfilename', return_value=str(report)):
                 p.export_result()
             data = json.loads(report.read_text(encoding='utf-8'))
             self.assertIn('spectrum_sha256', data['optics'])
@@ -206,9 +206,9 @@ class PerformanceUI(unittest.TestCase):
         p.eqe_vars['step_nm'].set('100')
         with tempfile.TemporaryDirectory() as folder:
             project = Path(folder)/'project.json'
-            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(project)):
+            with patch('perovskite_studio.performance_page.filedialog.asksaveasfilename', return_value=str(project)):
                 p.save()
-            with patch('performance_page.filedialog.askopenfilename', return_value=str(project)):
+            with patch('perovskite_studio.performance_page.filedialog.askopenfilename', return_value=str(project)):
                 p.load()
             self.assertEqual(p.layers[0]['interface']['Nt'], 1e11)
             self.assertEqual(p.layers[0]['interface']['trap_type'], -1)
@@ -222,7 +222,7 @@ class PerformanceUI(unittest.TestCase):
             p.plot()
             self.assertIn('电流预算', p.analysis_note.get())
             path = Path(folder)/'loss.csv'
-            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(path)):
+            with patch('perovskite_studio.performance_page.filedialog.asksaveasfilename', return_value=str(path)):
                 p.export_csv()
             self.assertIn('interface_1_mA_cm2', path.read_text())
             p.run_eqe()
@@ -235,16 +235,16 @@ class PerformanceUI(unittest.TestCase):
             self.assertFalse(p.settings_visible)
             e = p.eqe_result
             path = Path(folder)/'eqe.csv'
-            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(path)):
+            with patch('perovskite_studio.performance_page.filedialog.asksaveasfilename', return_value=str(path)):
                 p.export_csv()
             self.assertIn('EQE_fraction', path.read_text())
             report = Path(folder)/'eqe.json'
-            with patch('performance_page.filedialog.asksaveasfilename', return_value=str(report)):
+            with patch('perovskite_studio.performance_page.filedialog.asksaveasfilename', return_value=str(report)):
                 p.export_result()
             saved = json.loads(report.read_text(encoding='utf-8'))
             self.assertEqual(saved['kind'], 'eqe')
             self.assertEqual(saved['layers'][1]['Eg'], 1.7)
-            with patch('performance_page.run_eqe', side_effect=ValueError('failure')), patch('performance_page.messagebox.showerror'):
+            with patch('perovskite_studio.performance_page.run_eqe', side_effect=ValueError('failure')), patch('perovskite_studio.performance_page.messagebox.showerror'):
                 p.run_eqe()
                 self.wait_for_run()
             self.assertIs(p.eqe_result, e)

@@ -7,11 +7,11 @@ import unittest
 
 import numpy as np
 
-from optics import (DATA_DIR, NK_LIBRARY, get_optics, read_csv, spectrum_table,
+from perovskite_studio.optics import (DATA_DIR, NK_LIBRARY, get_optics, read_csv, spectrum_table,
                     integrate, nk_table)
-from performance import (DEFAULT_SETTINGS, ENGINE_DIR, import_layers, write_inputs,
+from perovskite_studio.performance import (DEFAULT_SETTINGS, ENGINE_DIR, import_layers, write_inputs,
                          run_simulation, validate_device, _reverse_for_illumination)
-from physics import example
+from perovskite_studio.physics import example
 
 
 class OpticalInputs(unittest.TestCase):

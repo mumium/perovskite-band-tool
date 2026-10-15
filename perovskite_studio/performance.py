@@ -20,12 +20,13 @@ import uuid
 import numpy as np
 from scipy.optimize import brentq
 
-from physics import normalize, profile, validate
-from optics import get_optics, default_nk, validate_optics, prepare_optical_files, integrate, optical_model
+from .physics import normalize, profile, validate
+from .optics import get_optics, default_nk, validate_optics, prepare_optical_files, integrate, optical_model
+from .paths import RESOURCE_ROOT
 
 ENGINE_VERSION = '5.36'
 ENGINE_BUILD = '5.36-pds1'
-ENGINE_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'vendor' / 'simsalabim'
+ENGINE_DIR = RESOURCE_ROOT / 'vendor' / 'simsalabim'
 DEFAULT_SETTINGS = dict(T=300., left=5., right=4.1, left_anode=1,
                         G=3e21, pin=100., vmin=-.04, vmax=1.5, vstep=.02,
                         sn_left=0., sp_left=1e7, sn_right=1e7, sp_right=0.,
@@ -424,7 +425,7 @@ def _engine_failure(folder, context, message, stdout='', stderr='', log='', retu
     folder = Path(folder)
     saved = None
     try:
-        from app_info import APP_VERSION
+        from .app_info import APP_VERSION
         metadata = dict(created_utc=datetime.now(timezone.utc).isoformat(),
                         operation=context, returncode=returncode, message=message,
                         app_version=APP_VERSION, engine=ENGINE_VERSION, engine_build=ENGINE_BUILD,

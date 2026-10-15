@@ -1,6 +1,6 @@
 """Reproduce PDS mesh fixes from a checkout of upstream SIMsalabim v5.36.
 
-Usage: python prepare_simss_source.py path/to/SIMsalabim-5.36
+Usage: python scripts/prepare_simss_source.py path/to/SIMsalabim-5.36
 The exact resulting sources are distributed in vendor/simsalabim/source.
 """
 from pathlib import Path
@@ -10,7 +10,7 @@ import sys
 
 def prepare(upstream):
     upstream = Path(upstream)
-    target = Path(__file__).resolve().parent/'vendor'/'simsalabim'/'source'
+    target = Path(__file__).resolve().parent.parent/'vendor'/'simsalabim'/'source'
     target.mkdir(parents=True, exist_ok=True)
     shutil.copytree(upstream/'Units', target/'Units', dirs_exist_ok=True)
     (target/'SimSS').mkdir(exist_ok=True)

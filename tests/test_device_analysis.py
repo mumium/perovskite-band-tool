@@ -9,13 +9,13 @@ from unittest.mock import patch
 
 import numpy as np
 
-from physics import example
-from optics import effective_nk, nk_table, optical_model, HC_EV_NM, get_optics
-from performance import (DEFAULT_SETTINGS, ENGINE_DIR, SimulationCancelled, import_layers,
+from perovskite_studio.physics import example
+from perovskite_studio.optics import effective_nk, nk_table, optical_model, HC_EV_NM, get_optics
+from perovskite_studio.performance import (DEFAULT_SETTINGS, ENGINE_DIR, SimulationCancelled, import_layers,
                          write_inputs, validate_device, run_simulation, run_eqe, loss_at_voltage,
                          _reverse_for_illumination, _rewrite_setup, _run_engine, integrate)
-from performance import _eqe_short_circuit
-from test_performance import values
+from perovskite_studio.performance import _eqe_short_circuit
+from tests.test_performance import values
 
 
 class AnalysisInputs(unittest.TestCase):
@@ -87,7 +87,7 @@ class AnalysisInputs(unittest.TestCase):
             return data, ''
         with tempfile.TemporaryDirectory() as folder:
             (Path(folder)/'simulation_setup.txt').write_text('Vmin = 0\nVmax = 0\n', encoding='ascii')
-            with patch('performance._run_engine', side_effect=linear_device):
+            with patch('perovskite_studio.performance._run_engine', side_effect=linear_device):
                 data, internal = _eqe_short_circuit(folder, settings, None, 0., 'test EQE')
             self.assertAlmostEqual(internal, -rs_si*j0/(1+rs_si*conductance), places=10)
             self.assertAlmostEqual(float(data['Jext'][0]), j0/(1+rs_si*conductance), places=8)

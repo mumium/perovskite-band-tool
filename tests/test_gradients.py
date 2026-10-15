@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from physics import (layer, profile, normalize, solve, alignment, validate, example,
+from perovskite_studio.physics import (layer, profile, normalize, solve, alignment, validate, example,
                      shift_band, drawing_segments)
 
 class Gradients(unittest.TestCase):

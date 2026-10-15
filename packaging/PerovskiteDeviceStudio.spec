@@ -1,12 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
+from pathlib import Path
+
+PROJECT_ROOT = Path(SPECPATH).resolve().parent
 
 
 a = Analysis(
-    ['app.py'],
-    pathex=[],
+    [str(PROJECT_ROOT / 'run.py')],
+    pathex=[str(PROJECT_ROOT)],
     binaries=[],
-    datas=[('assets', 'assets'), ('vendor/simsalabim', 'vendor/simsalabim'), ('device_structures', 'device_structures')],
+    datas=[(str(PROJECT_ROOT / 'assets'), 'assets'),
+           (str(PROJECT_ROOT / 'vendor' / 'simsalabim'), 'vendor/simsalabim'),
+           (str(PROJECT_ROOT / 'device_structures'), 'device_structures')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -37,7 +42,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['assets/logo.ico'],
+    icon=[str(PROJECT_ROOT / 'assets' / 'logo.ico')],
     exclude_binaries=folder_build,
 )
 

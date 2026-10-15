@@ -1,6 +1,6 @@
 """Layer-local readouts; never interpolate across a heterojunction."""
 import numpy as np
-from physics import drawing_segments, profile
+from .physics import drawing_segments, profile
 
 
 def analysis_segments(layers, result, temperature=300, left=5., right=4.1):

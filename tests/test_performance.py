@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import numpy as np
 
-from physics import example
-from performance import (DEFAULT_SETTINGS, ENGINE_DIR, SimulationCancelled,
+from perovskite_studio.physics import example
+from perovskite_studio.performance import (DEFAULT_SETTINGS, ENGINE_DIR, SimulationCancelled,
                          calculate_metrics, import_layers, run_simulation,
                          validate_device, write_inputs, discretize_layers, simulation_mesh)
 
@@ -181,7 +181,7 @@ class RealSimSS(unittest.TestCase):
             self.assertEqual(np.count_nonzero(~np.isclose(data['mun'], 1e-3, rtol=1e-9, atol=0)), 6)
 
     def test_forced_homogeneous_sublayers_do_not_add_transport_barriers(self):
-        with patch('performance.is_graded', return_value=True):
+        with patch('perovskite_studio.performance.is_graded', return_value=True):
             split = run_simulation(self.layers, dict(self.settings, grading_slices=8))
         for key in ('Jsc', 'Voc', 'PCE'):
             self.assertLess(abs(split['metrics'][key]/self.reference['metrics'][key]-1), .01, key)

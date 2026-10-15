@@ -9,9 +9,9 @@ import unittest
 from unittest.mock import Mock, patch
 import zipfile
 
-from performance import (DEFAULT_SETTINGS, _run_engine, run_eqe, import_layers,
+from perovskite_studio.performance import (DEFAULT_SETTINGS, _run_engine, run_eqe, import_layers,
                          _engine_executable, EngineFailure, run_simulation)
-from physics import example
+from perovskite_studio.physics import example
 
 
 class EngineDiagnostics(unittest.TestCase):
@@ -31,8 +31,8 @@ class EngineDiagnostics(unittest.TestCase):
                     for name in ('log.txt', 'JV.dat', 'OpticalProfile.dat'):
                         self.assertFalse((folder/name).exists())
                     return process
-                with patch('performance.subprocess.Popen', side_effect=launch), \
-                     patch('performance._diagnostics_directories', return_value=(saved_root,)):
+                with patch('perovskite_studio.performance.subprocess.Popen', side_effect=launch), \
+                     patch('perovskite_studio.performance._diagnostics_directories', return_value=(saved_root,)):
                     with self.assertRaises(RuntimeError) as raised:
                         _run_engine(folder, DEFAULT_SETTINGS, context='EQE 第 3/6 个波长（500 nm）')
                 message = str(raised.exception)
@@ -59,8 +59,8 @@ class EngineDiagnostics(unittest.TestCase):
                 return b'current console', b'current error'
             process.communicate.side_effect = communicate
             process.poll.return_value = 94
-            with patch('performance.subprocess.Popen', return_value=process), \
-                 patch('performance._diagnostics_directories', return_value=(Path(saved_root),)):
+            with patch('perovskite_studio.performance.subprocess.Popen', return_value=process), \
+                 patch('perovskite_studio.performance._diagnostics_directories', return_value=(Path(saved_root),)):
                 with self.assertRaises(RuntimeError) as raised:
                     _run_engine(folder, DEFAULT_SETTINGS)
             message = str(raised.exception)
@@ -75,15 +75,15 @@ class EngineDiagnostics(unittest.TestCase):
             process = Mock(returncode=0)
             process.communicate.return_value = (b'', b'')
             process.poll.return_value = 0
-            with patch('performance.subprocess.Popen', return_value=process), \
-                 patch('performance._diagnostics_directories', return_value=(Path(saved_root),)):
+            with patch('perovskite_studio.performance.subprocess.Popen', return_value=process), \
+                 patch('perovskite_studio.performance._diagnostics_directories', return_value=(Path(saved_root),)):
                 with self.assertRaisesRegex(RuntimeError, '未生成本次 J–V'):
                     _run_engine(folder, DEFAULT_SETTINGS)
 
     def test_eqe_background_and_wavelength_failures_have_correct_context(self):
         layers = import_layers(example())
         settings = dict(DEFAULT_SETTINGS, optics=dict(mode='spectrum'), eqe=dict(step_nm=100))
-        with patch('performance._run_engine', side_effect=RuntimeError('baseline crash')) as engine:
+        with patch('perovskite_studio.performance._run_engine', side_effect=RuntimeError('baseline crash')) as engine:
             with self.assertRaisesRegex(RuntimeError, 'baseline crash'):
                 run_eqe(layers, settings)
             self.assertEqual(engine.call_args.kwargs['context'], 'EQE 背景计算')
@@ -96,7 +96,7 @@ class EngineDiagnostics(unittest.TestCase):
                            header='x G_ehp', comments='')
                 return np.array([(0., 0., 0.)], dtype=[('Vext', float), ('Jext', float), ('errJ', float)]), ''
             raise RuntimeError(context)
-        with patch('performance._run_engine', side_effect=fake_engine):
+        with patch('perovskite_studio.performance._run_engine', side_effect=fake_engine):
             with self.assertRaisesRegex(RuntimeError, 'EQE 第 1/6 个波长（300 nm）'):
                 run_eqe(layers, settings)
 
@@ -116,8 +116,8 @@ class EngineDiagnostics(unittest.TestCase):
             inputs.append((Path(kwargs['cwd'])/'simulation_setup.txt').read_bytes())
             return crashed if len(calls) == 1 else native_popen(*args, **kwargs)
         with tempfile.TemporaryDirectory() as saved_root:
-            with patch('performance.subprocess.Popen', side_effect=launch), \
-                 patch('performance._diagnostics_directories', return_value=(Path(saved_root),)):
+            with patch('perovskite_studio.performance.subprocess.Popen', side_effect=launch), \
+                 patch('perovskite_studio.performance._diagnostics_directories', return_value=(Path(saved_root),)):
                 result = run_simulation(layers, settings)
             self.assertEqual(len(calls), 2)
             self.assertEqual(inputs[0], inputs[1])
@@ -131,8 +131,8 @@ class EngineDiagnostics(unittest.TestCase):
         def fail(*args, **kwargs):
             cancelled.set()
             raise EngineFailure('test 226', returncode=226)
-        from performance import SimulationCancelled
-        with patch('performance._run_engine_once', side_effect=fail) as engine:
+        from perovskite_studio.performance import SimulationCancelled
+        with patch('perovskite_studio.performance._run_engine_once', side_effect=fail) as engine:
             with self.assertRaises(SimulationCancelled):
                 _run_engine('.', DEFAULT_SETTINGS, cancel=cancelled)
             engine.assert_called_once()
@@ -146,7 +146,7 @@ class EngineDiagnostics(unittest.TestCase):
             source.mkdir()
             filename = 'simss.exe' if sys.platform == 'win32' else 'simss'
             (source/filename).write_bytes(b'engine version one')
-            with patch('performance.ENGINE_DIR', source), \
+            with patch('perovskite_studio.performance.ENGINE_DIR', source), \
                  patch.object(sys, 'frozen', True, create=True), \
                  patch.dict(os.environ, LOCALAPPDATA=str(root/'cache')):
                 first = _engine_executable()

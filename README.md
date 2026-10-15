@@ -6,15 +6,29 @@ Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两
 
 1.3.3 更新：两个页面的材料列表显示 5 行，新增随当前输入更新的器件结构图，标注名称、厚度及入射方向；小窗口自动调整结构图位置。J–V / EQE 运行按钮大小一致，分别使用青色与紫色；辅助按钮缩小，J–V 四项指标改为无大边框的紧凑布局，保留大号数值，为图表腾出空间。新增 [器件结构参数库](device_structures/README.md)，收录 Air 入射、3.0→1.53 eV 渐变器件的原始参数。详见 [更新记录](CHANGELOG.md)。
 
-![能带模拟页面](preview_band_studio.png)
+![能带模拟页面](docs/images/preview_band_studio.png)
 
-双击 `start.bat`，或执行 `python app.py`。依赖：`pip install -r requirements.txt`。
+双击 `start.bat`，或执行 `python run.py`。依赖：`pip install -r requirements.txt`。
 
 Windows 打包版：双击 `dist/PerovskiteDeviceStudio.exe`，无需安装 Python 或 SimSS。可单独复制 EXE 到其他 Windows 64 位电脑运行。旧版 `PerovskiteBandTool.exe` 不再作为当前版本入口。
 
 [下载 Windows 1.3.3 单文件版](https://github.com/mumium/perovskite-band-tool/releases/download/v1.3.3/PerovskiteDeviceStudio.exe) · [下载文件夹版 ZIP](https://github.com/mumium/perovskite-band-tool/releases/download/v1.3.3/PerovskiteDeviceStudio-1.3.3-portable.zip) · [版本发布页](https://github.com/mumium/perovskite-band-tool/releases/tag/v1.3.3)
 
 重新打包：安装项目依赖及 `pyinstaller`，再运行 `build_exe.bat`。程序为单文件无控制台版本，首次启动需要解压运行依赖，可能稍慢。
+
+## 项目目录
+
+| 目录或入口 | 内容 |
+| --- | --- |
+| `run.py` / `start.bat` | 启动桌面工具；也可运行 `python -m perovskite_studio` |
+| `perovskite_studio/` | 程序源码：界面、能带、电学性能及光学模型 |
+| `tests/` | 模型与真实桌面界面测试 |
+| `device_structures/` | 可复用的器件参数库 |
+| `research/` | 研究报告、性能表、输入及原始曲线数据索引 |
+| `docs/` | 模型说明；页面预览图在 `docs/images/` |
+| `packaging/` | Windows 程序打包配置 |
+| `scripts/` | 求解器源码准备等维护脚本 |
+| `assets/` / `vendor/` | 图标、光谱、光学数据与 SimSS 求解器 |
 
 ## 器件结构与参数文件
 
@@ -40,7 +54,7 @@ Windows 打包版：双击 `dist/PerovskiteDeviceStudio.exe`，无需安装 Pyth
 4. 点击顶部青色「▶ 运行 J–V 模拟」。计算在后台运行，可取消或切换页面。完成后显示 J–V、Jsc、Voc、FF、效率及最大功率点；图表选项可切换「入射光谱」「光生分布」「损失分析」。默认聚焦光伏区域，勾选「完整扫描」查看全部点。第二次成功计算后自动叠加前次曲线、显示指标差值，可取消「上次结果」或「清除对照」。EQE 使用单独的「运行 EQE」按钮。
 5. 顶部「打开参数／保存参数」使用独立性能 JSON，不影响能带项目格式；「导出结果」菜单输出当前视图 CSV、完整结果 JSON、PNG/SVG。结果 JSON 包含输入、光谱、n,k 数据及指纹、G(x)、曲线、指标、警告、离散子层和日志。自定义 CSV 数据内嵌在参数项目中，移动电脑不需另带源文件。**修改输入、导入或打开项目均保留上次成功结果**；运行中、失败或取消时也保留。只有新计算成功才更新。导出对应成功结果的输入快照。
 
-![器件性能模拟页面](preview_performance.png)
+![器件性能模拟页面](docs/images/preview_performance.png)
 
 ### 光谱怎样影响 J–V
 
@@ -53,7 +67,7 @@ Windows 打包版：双击 `dist/PerovskiteDeviceStudio.exe`，无需安装 Pyth
 - 「固定 n,k」保持测量数据，改变 Eg 不改变光生吸收。「吸收边联动（近似）」由本层参考 Eg 和各子层局部 Eg 重映射吸收系数，低于局部带隙的光生吸收置零，n 保持原谱。新建示例的吸收层默认开启联动，MAPI 示例参考 Eg=1.55 eV；旧项目缺少此设置时保持固定模式。亲和能/掺杂不自动改变 n,k；具体公式和边界见 [模型细节](docs/MODEL_DETAILS.md)。
 - 保留「手动光生率 G」模式：所有勾选层使用同一均匀 G，G 与 Pin 须自行对应。旧性能项目未含光学设置时自动使用手动模式，保持原结果含义。光谱模式会禁用手动 G 输入。
 
-![光生分布](preview_optics.png)
+![光生分布](docs/images/preview_optics.png)
 
 该光学模型针对平面薄膜法向入射，不模拟散射、纹理、角度分布或光致材料变化。电学带隙与实测吸收谱需由使用者保持一致；内置示例的效率不是对具体样品的预测。
 
@@ -75,7 +89,7 @@ Windows 打包版：双击 `dist/PerovskiteDeviceStudio.exe`，无需安装 Pyth
 
 同时列出光生、输出、漏电、边界/离散残差和串联电阻耗散。**净复合电流不是效率损失百分比**；残差不等于纯接触损失，包含边界处理与离散积分差异。未扫描到开路点时不外推该工作点。CSV 导出整个电压扫描中的总量、逐层和逐界面分量；JSON 保留完整分析数组。
 
-![损失分析](preview_losses.png)
+![损失分析](docs/images/preview_losses.png)
 
 ### EQE 模拟
 
@@ -85,7 +99,7 @@ Windows 打包版：双击 `dist/PerovskiteDeviceStudio.exe`，无需安装 Pyth
 
 EQE 与 J–V 各自保存最近成功快照；**四项指标始终属于最近 J–V**，EQE/损失视图暂时收起指标卡以扩大图表，切回 J–V 恢复。修改参数、计算失败或取消不会覆盖它们。图表选 EQE 时，CSV/JSON/图片导出对应最近 EQE 输入。光谱加权电流为微分响应参考，非线性条件下不保证等于 Jsc；应比较更小探测通量、更细波长步长以及更密网格。
 
-![EQE 模拟](preview_eqe.png)
+![EQE 模拟](docs/images/preview_eqe.png)
 
 ### 模型与单位
 
@@ -126,7 +140,7 @@ EQE 与 J–V 各自保存最近成功快照；**四项指标始终属于最近 
 
 勾选图上方「鼠标拖动能带」，关闭工具栏的缩放/平移模式：
 
-![端点拖动后的能带](preview_drag.png)
+![端点拖动后的能带](docs/images/preview_drag.png)
 
 - **拖动蓝色 Ec 或橙色 Ev 曲线中间**：上下移动该层整条带边。
 - **拖动左右端点圆点**：只调整该侧材料带边，形成或改变沿厚度方向的渐变。
@@ -189,4 +203,4 @@ EQE 与 J–V 各自保存最近成功快照；**四项指标始终属于最近 
 - 「当前曲线与参数 CSV」前两列保留电压、电流，增加四项参数列；每行记录同一曲线的参数，NaN 表示未确认或不适用。
 - 「完整结果 JSON」保留曲线、四项参数及完整计算快照。修改页面输入不会改变上一次成功结果的导出内容。
 
-![J–V 曲线与四项参数导出示例](preview_jv_export.png)
+![J–V 曲线与四项参数导出示例](docs/images/preview_jv_export.png)

@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
-from physics import layer, example, alignment, solve
-from analysis_views import analysis_segments, interface_offsets, sample_position
+from perovskite_studio.physics import layer, example, alignment, solve
+from perovskite_studio.analysis_views import analysis_segments, interface_offsets, sample_position
 
 
 class AnalysisViews(unittest.TestCase):

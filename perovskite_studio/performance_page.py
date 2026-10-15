@@ -12,12 +12,12 @@ import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
-from physics import FIELDS, layer
-from ui_helpers import ScrollableFrame, FlowToolbar
-from device_structure import DeviceStructure, preview_layers, STRUCTURES_DIR
-from optics import (NK_LIBRARY, OPTICS_DEFAULTS, get_optics, default_nk,
+from .physics import FIELDS, layer
+from .ui_helpers import ScrollableFrame, FlowToolbar
+from .device_structure import DeviceStructure, preview_layers, STRUCTURES_DIR
+from .optics import (NK_LIBRARY, OPTICS_DEFAULTS, get_optics, default_nk,
                     nk_table, read_csv, spectrum_table, optical_model)
-from performance import (DEFAULT_SETTINGS, EXTRA_FIELDS, ENGINE_VERSION,
+from .performance import (DEFAULT_SETTINGS, EXTRA_FIELDS, ENGINE_VERSION,
                          SimulationCancelled, import_layers, run_simulation,
                          validate_device, INTERFACE_DEFAULTS, interface_parameters, EQE_DEFAULTS,
                          run_eqe, loss_at_voltage, validate_eqe)
@@ -1038,7 +1038,7 @@ class PerformancePage(ttk.Frame):
             if data.get('schema') != 1 or data.get('model') != 'simss' or data.get('engine') != ENGINE_VERSION:
                 raise ValueError('请选择本工具保存的 SimSS 5.36 性能参数文件；能带项目请在能带页打开后导入。')
             data['settings'].setdefault('grading_slices', DEFAULT_SETTINGS['grading_slices'])
-            from physics import normalize
+            from .physics import normalize
             data['layers'] = [normalize(a) for a in data['layers']]
             absorber = min(range(len(data['layers'])), key=lambda i: data['layers'][i]['Eg'])
             for i, a in enumerate(data['layers']):

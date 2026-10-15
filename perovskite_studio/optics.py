@@ -10,10 +10,11 @@ import re
 import sys
 
 import numpy as np
+from .paths import RESOURCE_ROOT
 
 integrate = np.trapezoid if hasattr(np, 'trapezoid') else np.trapz
 
-DATA_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))/'assets'/'optics'
+DATA_DIR = RESOURCE_ROOT/'assets'/'optics'
 NK_LIBRARY = {'PTAA': 'nk_PTAA.txt', 'MAPI': 'nk_MAPI.txt', 'C60': 'nk_C60_1.txt',
               'ITO': 'nk_ITO.txt', 'Au': 'nk_Au.txt', 'Ag': 'nk_Ag.txt',
               'SiO2': 'nk_SiO2.txt', 'Air': 'nk_Air.txt'}
@@ -163,7 +164,7 @@ def validate_optics(layers, settings):
         a = nk_table(spec)
         if lo < a[0, 0]-1e-6 or hi > a[-1, 0]+1e-6:
             raise ValueError(f'{name} 的 n,k 仅覆盖 {a[0,0]:g}–{a[-1,0]:g} nm；请缩小波段或导入覆盖完整波段的数据。')
-    from physics import profile
+    from .physics import profile
     for a in layers:
         for gap in profile(a, [0., 1.])['Eg']:
             effective_nk(dict(a, Eg=float(gap)), [lo, hi])

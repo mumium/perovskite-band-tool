@@ -1,4 +1,4 @@
-"""Run: python app.py"""
+"""Desktop interface. Run from the project root with: python run.py."""
 import csv
 import json
 import sys
@@ -14,18 +14,19 @@ rcParams['font.sans-serif']=['Microsoft YaHei','SimHei','DejaVu Sans']
 rcParams['axes.unicode_minus']=False
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-from physics import (FIELDS, example, layer, solve, validate, normalize, alignment,
+from .physics import (FIELDS, example, layer, solve, validate, normalize, alignment,
                      profile, shift_band)
-from analysis_views import analysis_segments, interface_offsets, sample_position
-from performance_page import PerformancePage
-from app_info import APP_NAME, APP_ENGLISH_NAME
-from ui_helpers import ScrollableFrame, FlowToolbar, configure_theme
-from device_structure import DeviceStructure, preview_layers
+from .analysis_views import analysis_segments, interface_offsets, sample_position
+from .performance_page import PerformancePage
+from .app_info import APP_NAME, APP_ENGLISH_NAME
+from .ui_helpers import ScrollableFrame, FlowToolbar, configure_theme
+from .device_structure import DeviceStructure, preview_layers
+from .paths import RESOURCE_ROOT
 
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        assets = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets'
+        assets = RESOURCE_ROOT / 'assets'
         self._app_icon = tk.PhotoImage(file=str(assets / 'logo.png'))
         self.iconphoto(True, self._app_icon)
         if sys.platform == 'win32':
