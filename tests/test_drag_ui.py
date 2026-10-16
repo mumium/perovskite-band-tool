@@ -103,25 +103,29 @@ class DragUI(unittest.TestCase):
         self.assertEqual(a.offset_artists,[])
         a.clear_hover();self.assertFalse(a.hover_line.get_visible())
 
-    def test_small_screen_plot_stays_tall_and_stable_while_dragging(self):
+    def test_restored_layout_with_right_hand_readings_and_stable_dragging(self):
         a=self.app
-        for geometry,minimum_height in (('1024x650',260),('900x560',160),('1320x880',460)):
+        self.assertEqual([a.band_settings_tabs.tab(t,'text') for t in a.band_settings_tabs.tabs()],['基本参数','渐变设置'])
+        for geometry,minimum_height in (('1024x650',100),('900x560',65),('1320x880',220)):
             a.geometry(geometry);a.update();a.canvas.draw();a.update()
             self.assertGreater(a.ax.bbox.height,minimum_height)
             self.assertTrue(a.structure.winfo_viewable())
             self.assertEqual(int(a.listbox['height']),5)
+            chart=a.canvas.get_tk_widget()
+            self.assertGreaterEqual(a.band_readings.winfo_rootx(),chart.winfo_rootx()+chart.winfo_width())
         a.geometry('1024x650');a.update();a.canvas.draw();a.update()
         before=a.ax.bbox.bounds
         self.emit('motion_notify_event',250,-4)
-        self.assertIn('Ec',a.hover_readout.get())
+        self.assertIn('Ec',a.hover_text.get())
         np.testing.assert_allclose(a.ax.bbox.bounds,before,atol=.5)
+        last=a.hover_text.get()
+        from types import SimpleNamespace
+        a.clear_hover(SimpleNamespace())
+        self.assertEqual(a.hover_text.get(),last)
         self.drag('Ec','right',.15,release=False)
         np.testing.assert_allclose(a.ax.bbox.bounds,before,atol=.5)
         a.cancel_drag();a.update()
         self.assertIsNotNone(a.fig.get_layout_engine())
-        a.band_settings_tabs.select(a.band_conditions);a.update()
-        self.assertTrue(a.band_conditions.winfo_viewable())
-        self.assertGreater(a.ax.bbox.height,260)
 
     def test_diagnostic_views_and_vacuum_mode(self):
         a=self.app;a.mode.set('热平衡弯曲能带');a.calculate();a.update()

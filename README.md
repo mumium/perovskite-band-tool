@@ -2,9 +2,9 @@
 
 <img src="assets/logo.png" width="96" alt="钙钛矿器件模拟工作台图标">
 
-Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两个独立页面。能带页查看真空参考排列、自洽热平衡能带、电场与载流子浓度；性能页用 SimSS 计算均匀或渐变器件的稳态 J–V、Jsc、Voc、FF、PCE。版本 **1.3.5**。
+Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两个独立页面。能带页查看真空参考排列、自洽热平衡能带、电场与载流子浓度；性能页用 SimSS 计算均匀或渐变器件的稳态 J–V、Jsc、Voc、FF、PCE。版本 **1.3.6**。
 
-1.3.5 更新：能带页的结构图移到左侧，求解条件与详细读数收纳在左侧「求解与读数」页签，右侧为图表保留更多高度；底部保留一行即时读数。拖动时固定坐标区位置，避免预览标题引起布局跳动。
+1.3.6 更新：恢复能带页原有布局，结构图和求解条件回到图表上方，左侧恢复「基本参数」「渐变设置」两个页签。鼠标提示、实时数值与当前层端点信息移到图表右侧的可滚动读数区，不再占用图表上方的多行空间；数值逐项显示，移出曲线后保留最后读数供查看。拖动时固定坐标区位置。
 
 1.3.4 更新：保留原有图标，修复运行窗口只向 Windows 提供 32 px 大图标的问题，任务栏 / Alt+Tab 改为显式加载原图的 256 px 资源；ICO 补齐 16–256 px 共 14 档尺寸，并设置独立的 Windows 应用标识。模拟模型与参数不变。
 
@@ -16,7 +16,7 @@ Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两
 
 Windows 打包版：双击 `dist/PerovskiteDeviceStudio.exe`，无需安装 Python 或 SimSS。可单独复制 EXE 到其他 Windows 64 位电脑运行。旧版 `PerovskiteBandTool.exe` 不再作为当前版本入口。
 
-[下载 Windows 1.3.5 单文件版](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.5/PerovskiteDeviceStudio.exe) · [下载文件夹版 ZIP](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.5/PerovskiteDeviceStudio-1.3.5-portable.zip) · [版本发布页](https://github.com/mumium/perovskite-device-studio/releases/tag/v1.3.5)
+[下载 Windows 1.3.6 单文件版](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.6/PerovskiteDeviceStudio.exe) · [下载文件夹版 ZIP](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.6/PerovskiteDeviceStudio-1.3.6-portable.zip) · [版本发布页](https://github.com/mumium/perovskite-device-studio/releases/tag/v1.3.6)
 
 重新打包：安装项目依赖及 `pyinstaller`，再运行 `build_exe.bat`。程序为单文件无控制台版本，首次启动需要解压运行依赖，可能稍慢。
 
@@ -38,7 +38,7 @@ Windows 打包版：双击 `dist/PerovskiteDeviceStudio.exe`，无需安装 Pyth
 
 可复用结构统一保存在 [device_structures](device_structures/README.md)，以后新增 JSON 可继续加入此目录。性能页「打开参数」默认浏览这个目录，打包版也内置该参数库。
 
-两个页面的左侧材料列表可一次显示 5 层；结构图按左到右顺序显示当前层的名称和厚度，选中层高亮。修改名称或厚度会即时更新结构图，增删、排序、导入和打开参数后同步更新。方块宽度为示意，实际厚度以标注为准；层数较多时支持横向滚动。能带页的结构图固定在左侧，模型、温度、电极功函数及完整读数在左侧「求解与读数」页签；性能页在窗口较矮时将结构图移到左侧，为结果曲线留出空间。
+两个页面的左侧材料列表可一次显示 5 层；结构图按左到右顺序显示当前层的名称和厚度，选中层高亮。修改名称或厚度会即时更新结构图，增删、排序、导入和打开参数后同步更新。方块宽度为示意，实际厚度以标注为准；层数较多时支持横向滚动。窗口较矮时，结构图移到左侧编辑区，为结果曲线留出空间。能带页模型、温度与电极功函数显示在原有的「求解条件」区，鼠标提示和实时数值显示在曲线右侧。
 
 性能页箭头跟随「光谱与光学 → 照射方向」；能带页可单独选择示意方向，并随能带项目保存，**能带求解仍为暗态**。结构图对应当前编辑输入，保留的 J–V / EQE 曲线仍对应最近成功计算的参数快照。
 
