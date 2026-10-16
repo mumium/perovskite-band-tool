@@ -18,19 +18,29 @@ from .physics import (FIELDS, example, layer, solve, validate, normalize, alignm
                      profile, shift_band)
 from .analysis_views import analysis_segments, interface_offsets, sample_position
 from .performance_page import PerformancePage
-from .app_info import APP_NAME, APP_ENGLISH_NAME
+from .app_info import APP_NAME, APP_ENGLISH_NAME, APP_ID
 from .ui_helpers import ScrollableFrame, FlowToolbar, configure_theme
 from .device_structure import DeviceStructure, preview_layers
 from .paths import RESOURCE_ROOT
+from .windows_icon import install_taskbar_icon
 
 class App(tk.Tk):
     def __init__(self):
+        if sys.platform == 'win32':
+            # Set the taskbar identity before creating any native window.
+            import ctypes
+            set_app_id = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID
+            set_app_id.argtypes = [ctypes.c_wchar_p]
+            set_app_id.restype = ctypes.c_long
+            set_app_id(APP_ID)
         super().__init__()
         assets = RESOURCE_ROOT / 'assets'
-        self._app_icon = tk.PhotoImage(file=str(assets / 'logo.png'))
-        self.iconphoto(True, self._app_icon)
         if sys.platform == 'win32':
-            self.iconbitmap(str(assets / 'logo.ico'))
+            self.iconbitmap(default=str(assets / 'logo.ico'))
+            install_taskbar_icon(self, assets / 'logo.ico')
+        else:
+            self._app_icon = tk.PhotoImage(file=str(assets / 'logo-window.png'))
+            self.iconphoto(True, self._app_icon)
         self.title(f'{APP_NAME} · {APP_ENGLISH_NAME}')
         width=min(1320,max(900,self.winfo_screenwidth()-50))
         height=min(880,max(560,self.winfo_screenheight()-110))

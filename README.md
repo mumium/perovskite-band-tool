@@ -2,7 +2,9 @@
 
 <img src="assets/logo.png" width="96" alt="钙钛矿器件模拟工作台图标">
 
-Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两个独立页面。能带页查看真空参考排列、自洽热平衡能带、电场与载流子浓度；性能页用 SimSS 计算均匀或渐变器件的稳态 J–V、Jsc、Voc、FF、PCE。版本 **1.3.3**。
+Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两个独立页面。能带页查看真空参考排列、自洽热平衡能带、电场与载流子浓度；性能页用 SimSS 计算均匀或渐变器件的稳态 J–V、Jsc、Voc、FF、PCE。版本 **1.3.4**。
+
+1.3.4 更新：保留原有图标，修复运行窗口只向 Windows 提供 32 px 大图标的问题，任务栏 / Alt+Tab 改为显式加载原图的 256 px 资源；ICO 补齐 16–256 px 共 14 档尺寸，并设置独立的 Windows 应用标识。模拟模型与参数不变。
 
 1.3.3 更新：两个页面的材料列表显示 5 行，新增随当前输入更新的器件结构图，标注名称、厚度及入射方向；小窗口自动调整结构图位置。J–V / EQE 运行按钮大小一致，分别使用青色与紫色；辅助按钮缩小，J–V 四项指标改为无大边框的紧凑布局，保留大号数值，为图表腾出空间。新增 [器件结构参数库](device_structures/README.md)，收录 Air 入射、3.0→1.53 eV 渐变器件的原始参数。详见 [更新记录](CHANGELOG.md)。
 
@@ -12,7 +14,7 @@ Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两
 
 Windows 打包版：双击 `dist/PerovskiteDeviceStudio.exe`，无需安装 Python 或 SimSS。可单独复制 EXE 到其他 Windows 64 位电脑运行。旧版 `PerovskiteBandTool.exe` 不再作为当前版本入口。
 
-[下载 Windows 1.3.3 单文件版](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.3/PerovskiteDeviceStudio.exe) · [下载文件夹版 ZIP](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.3/PerovskiteDeviceStudio-1.3.3-portable.zip) · [版本发布页](https://github.com/mumium/perovskite-device-studio/releases/tag/v1.3.3)
+[下载 Windows 1.3.4 单文件版](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.4/PerovskiteDeviceStudio.exe) · [下载文件夹版 ZIP](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.4/PerovskiteDeviceStudio-1.3.4-portable.zip) · [版本发布页](https://github.com/mumium/perovskite-device-studio/releases/tag/v1.3.4)
 
 重新打包：安装项目依赖及 `pyinstaller`，再运行 `build_exe.bat`。程序为单文件无控制台版本，首次启动需要解压运行依赖，可能稍慢。
 
