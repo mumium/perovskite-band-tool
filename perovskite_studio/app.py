@@ -111,11 +111,9 @@ class App(tk.Tk):
         ttk.Label(grading,text='拖动会切换到「独立端点」，同步 Eg、χ。\n掺杂线性允许零浓度；对数两端须为正。',justify='left').pack(anchor='w',pady=6)
         note=ttk.Label(left,text='迁移率与寿命用于性能页，热平衡页只保存。\n示例参数仅用于演示。',foreground='#805c16')
         note.pack(side='bottom',anchor='w',pady=4,before=notebook)
-        self.structure_direction=tk.StringVar(value='左侧入射')
-        self.structure=DeviceStructure(body,direction_variable=self.structure_direction)
+        self.structure=DeviceStructure(body)
         self.structure.pack(in_=right,fill='x',pady=(0,4))
         self.structure.host=right
-        self.structure_direction.trace_add('write',self.update_structure)
         controls=ttk.LabelFrame(right,text='求解条件',padding=10); controls.pack(fill='x',pady=(0,7))
         self.mode=tk.StringVar(value='热平衡弯曲能带')
         ttk.Label(controls,text='能带模型').grid(row=0,column=0,sticky='w',padx=3)
@@ -197,7 +195,7 @@ class App(tk.Tk):
     def update_structure(self,*_):
         if hasattr(self,'structure'):
             layers=preview_layers(self.layers,self.index,self.vars) if hasattr(self,'vars') else self.layers
-            self.structure.set_layers(layers,'right' if self.structure_direction.get()=='右侧入射' else 'left',self.index)
+            self.structure.set_layers(layers,'left',self.index)
 
     def show_fields(self):
         self.busy=True
@@ -377,6 +375,12 @@ class App(tk.Tk):
             distance=np.min(np.linalg.norm(mouse-(a+fraction[:,None]*v),axis=1))
             if distance<=7:lines.append((distance,i,key,'whole'))
         matches=ends or lines
+        if ends:
+            closest=min(match[0] for match in ends)
+            # Nearly coincident interface endpoints are ambiguous at small sizes.
+            # Prefer the layer selected in the editor within two screen pixels.
+            selected=[match for match in ends if match[1]==self.index and match[0]<=closest+2]
+            if selected:matches=selected
         return min(matches,key=lambda z:(z[0],z[1]!=self.index)) if matches else None
 
     def drag_press(self,event):
@@ -481,8 +485,7 @@ class App(tk.Tk):
         try:s=self.commit()
         except Exception as e:messagebox.showerror('参数错误',str(e));return
         p=filedialog.asksaveasfilename(defaultextension='.json',filetypes=[('参数项目','*.json')])
-        if p:Path(p).write_text(json.dumps(dict(schema=3,layers=self.layers,settings=s,mode=self.mode.get(),
-                                              structure_illumination='right' if self.structure_direction.get()=='右侧入射' else 'left'),ensure_ascii=False,indent=2),encoding='utf-8')
+        if p:Path(p).write_text(json.dumps(dict(schema=3,layers=self.layers,settings=s,mode=self.mode.get()),ensure_ascii=False,indent=2),encoding='utf-8')
 
     def load(self):
         p=filedialog.askopenfilename(filetypes=[('参数项目','*.json')])
@@ -494,8 +497,6 @@ class App(tk.Tk):
             validate(data['layers'],s['T'],s['left'],s['right'])
             self.busy=True;self.layers=data['layers'];self.index=0
             for k,v in self.settings.items():v.set(s[k])
-            direction=data.get('structure_illumination',s.get('optics',{}).get('illumination','left'))
-            self.structure_direction.set('右侧入射' if direction=='right' else '左侧入射')
             self.mode.set(data.get('mode','热平衡弯曲能带'));self.snapshot=None
             self.drag_history.clear()
             self.busy=False;self.refresh_list();self.show_fields();self.calculate()

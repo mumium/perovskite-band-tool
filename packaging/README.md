@@ -4,7 +4,9 @@
 
 配置文件为 `PerovskiteDeviceStudio.spec`，程序入口为根目录 `run.py`。图标、光谱、n,k、器件参数库与 SimSS 从项目根目录打包；源码模式和打包模式通过 `perovskite_studio/paths.py` 定位资源。
 
-输出在 `dist/`，构建临时文件在 `build/`，两者不提交到 Git。已发布的 Windows 下载版见根目录 README。
+构建入口调用 `scripts/build_windows.py`，从 `app_info.py` 读取版本号，输出到 `dist/<版本号>/`，临时文件在 `build/release-<版本号>/`，两者不提交到 Git。例如 1.3.7 单文件版在 `dist/1.3.7/PerovskiteDeviceStudio.exe`，文件夹版在同级 `PerovskiteDeviceStudio-portable/`。源码方式也可运行 `python scripts/build_windows.py` 或追加 `--folder`。
+
+本地已有 ZIP、EXE、文件夹版和校验文件按其确认版本归档；缺少版本标识的早期文件在 `dist/legacy-unversioned/exe/`、`dist/legacy-unversioned/source/` 分开保存，未猜测版本号。已发布的 Windows 下载版见根目录 README。
 
 EXE 与 Windows 窗口共用 `assets/logo.ico`，包含 16–256 px 共 14 档尺寸。原稿为 `assets/logo.png`，图案保持原样；其他平台窗口使用 `assets/logo-window.png`。更新原稿后，先运行 `python scripts/build_icons.py`（需要 Pillow），再重新打包。
 

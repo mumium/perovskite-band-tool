@@ -2,7 +2,9 @@
 
 <img src="assets/logo.png" width="96" alt="钙钛矿器件模拟工作台图标">
 
-Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两个独立页面。能带页查看真空参考排列、自洽热平衡能带、电场与载流子浓度；性能页用 SimSS 计算均匀或渐变器件的稳态 J–V、Jsc、Voc、FF、PCE。版本 **1.3.6**。
+Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两个独立页面。能带页查看真空参考排列、自洽热平衡能带、电场与载流子浓度；性能页用 SimSS 计算均匀或渐变器件的稳态 J–V、Jsc、Voc、FF、PCE。版本 **1.3.7**。
+
+1.3.7 更新：删除能带页仅用于示意的入射方向选择；两个页面的结构图只保留一行「→ 入射光：左 → 右」说明，性能页随实际照射方向更新，小窗口和横向滚动时仍可见。Windows 构建输出按 `dist/<版本号>/` 分类，旧文件按已确认版本归档，未标注版本的早期文件单独保存。
 
 1.3.6 更新：恢复能带页原有布局，结构图和求解条件回到图表上方，左侧恢复「基本参数」「渐变设置」两个页签。鼠标提示、实时数值与当前层端点信息移到图表右侧的可滚动读数区，不再占用图表上方的多行空间；数值逐项显示，移出曲线后保留最后读数供查看。拖动时固定坐标区位置。
 
@@ -14,9 +16,9 @@ Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两
 
 双击 `start.bat`，或执行 `python run.py`。依赖：`pip install -r requirements.txt`。
 
-Windows 打包版：双击 `dist/PerovskiteDeviceStudio.exe`，无需安装 Python 或 SimSS。可单独复制 EXE 到其他 Windows 64 位电脑运行。旧版 `PerovskiteBandTool.exe` 不再作为当前版本入口。
+Windows 打包版：双击 `dist/1.3.7/PerovskiteDeviceStudio.exe`，无需安装 Python 或 SimSS。可单独复制 EXE 到其他 Windows 64 位电脑运行。历史文件按版本目录归档，未标注版本的早期文件在 `dist/legacy-unversioned/`。
 
-[下载 Windows 1.3.6 单文件版](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.6/PerovskiteDeviceStudio.exe) · [下载文件夹版 ZIP](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.6/PerovskiteDeviceStudio-1.3.6-portable.zip) · [版本发布页](https://github.com/mumium/perovskite-device-studio/releases/tag/v1.3.6)
+[下载 Windows 1.3.7 单文件版](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.7/PerovskiteDeviceStudio.exe) · [下载文件夹版 ZIP](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.7/PerovskiteDeviceStudio-1.3.7-portable.zip) · [版本发布页](https://github.com/mumium/perovskite-device-studio/releases/tag/v1.3.7)
 
 重新打包：安装项目依赖及 `pyinstaller`，再运行 `build_exe.bat`。程序为单文件无控制台版本，首次启动需要解压运行依赖，可能稍慢。
 
@@ -40,7 +42,7 @@ Windows 打包版：双击 `dist/PerovskiteDeviceStudio.exe`，无需安装 Pyth
 
 两个页面的左侧材料列表可一次显示 5 层；结构图按左到右顺序显示当前层的名称和厚度，选中层高亮。修改名称或厚度会即时更新结构图，增删、排序、导入和打开参数后同步更新。方块宽度为示意，实际厚度以标注为准；层数较多时支持横向滚动。窗口较矮时，结构图移到左侧编辑区，为结果曲线留出空间。能带页模型、温度与电极功函数显示在原有的「求解条件」区，鼠标提示和实时数值显示在曲线右侧。
 
-性能页箭头跟随「光谱与光学 → 照射方向」；能带页可单独选择示意方向，并随能带项目保存，**能带求解仍为暗态**。结构图对应当前编辑输入，保留的 J–V / EQE 曲线仍对应最近成功计算的参数快照。
+性能页的入射光说明跟随「光谱与光学 → 照射方向」，该物理设置继续参与光学计算。能带页不再提供入射方向选择，固定显示左到右的结构示意，**能带求解仍为暗态**；旧项目中的示意方向字段可读取但忽略，新保存的能带项目不再写入该字段。结构图对应当前编辑输入，保留的 J–V / EQE 曲线仍对应最近成功计算的参数快照。
 
 ## 研究结果与完整源数据
 

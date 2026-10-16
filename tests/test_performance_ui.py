@@ -272,6 +272,19 @@ class PerformanceUI(unittest.TestCase):
             self.assertEqual(size, (b.winfo_reqwidth(), b.winfo_reqheight()))
             b.state(('!'+state,))
 
+    def test_single_illumination_line_survives_compact_layout_and_direction_change(self):
+        a=self.app;p=self.page
+        self.assertFalse(hasattr(a,'structure_direction'))
+        for compact in (False,True):
+            a.structure.set_compact(compact)
+            self.assertEqual(a.structure.light_text.get(),'→  入射光：左 → 右')
+            for direction,expected in (('右侧入射','←  入射光：右 → 左'),('左侧入射','→  入射光：左 → 右')):
+                p.illumination.set(direction);a.update()
+                p.structure.set_compact(compact)
+                self.assertEqual(p.structure.light_text.get(),expected)
+                self.assertTrue(p.structure.light_label.winfo_viewable())
+                self.assertTrue(a.structure.light_label.winfo_manager())
+
 
 if __name__ == '__main__':
     unittest.main()

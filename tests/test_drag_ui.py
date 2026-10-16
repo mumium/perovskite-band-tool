@@ -83,9 +83,15 @@ class DragUI(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             project=Path(folder)/'project.json'
             with patch('perovskite_studio.app.filedialog.asksaveasfilename',return_value=str(project)):a.save()
-            self.assertEqual(json.loads(project.read_text(encoding='utf-8'))['schema'],3)
+            saved=json.loads(project.read_text(encoding='utf-8'))
+            self.assertEqual(saved['schema'],3)
+            self.assertNotIn('structure_illumination',saved)
+            # Old purely illustrative direction settings remain load-compatible.
+            saved['structure_illumination']='right'
+            project.write_text(json.dumps(saved),encoding='utf-8')
             with patch('perovskite_studio.app.filedialog.askopenfilename',return_value=str(project)):a.load()
             self.assertEqual(a.layers,expected)
+            self.assertEqual(a.structure.direction,'left')
             for method,name in ((a.export_params,'parameters.csv'),(a.export_curve,'curve.csv')):
                 path=Path(folder)/name
                 with patch('perovskite_studio.app.filedialog.asksaveasfilename',return_value=str(path)):method()
@@ -114,6 +120,7 @@ class DragUI(unittest.TestCase):
             chart=a.canvas.get_tk_widget()
             self.assertGreaterEqual(a.band_readings.winfo_rootx(),chart.winfo_rootx()+chart.winfo_width())
         a.geometry('1024x650');a.update();a.canvas.draw();a.update()
+        a.index=1;a.refresh_list();a.show_fields();a.canvas.draw();a.update()
         before=a.ax.bbox.bounds
         self.emit('motion_notify_event',250,-4)
         self.assertIn('Ec',a.hover_text.get())
