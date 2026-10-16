@@ -74,6 +74,7 @@ class App(tk.Tk):
         for text,cmd in [('添加',self.add),('删除',self.remove),('上移',lambda:self.move(-1)),('下移',lambda:self.move(1))]:
             ttk.Button(buttons,text=text,width=5,command=cmd).pack(side='left',padx=2)
         notebook=ttk.Notebook(left); notebook.pack(fill='both',expand=True,pady=8)
+        self.band_settings_tabs=notebook
         form_scroll=ScrollableFrame(notebook,width=325);notebook.add(form_scroll,text='基本参数')
         form=form_scroll.content
         self.vars={}
@@ -108,25 +109,31 @@ class App(tk.Tk):
         fraction.trace_add('write',self.schedule)
         ttk.Label(box,text='0：固定电子亲和能，只改变价带\n1：固定真空参考价带，只改变导带\n0.5：带隙变化由两条带边均分',justify='left').pack(anchor='w')
         ttk.Label(grading,text='拖动会切换到「独立端点」，同步 Eg、χ。\n掺杂线性允许零浓度；对数两端须为正。',justify='left').pack(anchor='w',pady=6)
-        note=ttk.Label(left,text='迁移率与寿命用于性能页，热平衡页只保存。\n示例参数仅用于演示。',foreground='#805c16')
-        note.pack(side='bottom',anchor='w',pady=4,before=notebook)
+        note=ttk.Label(form,text='迁移率与寿命用于性能页，热平衡页只保存。\n示例参数仅用于演示。',foreground='#805c16',wraplength=300)
+        note.grid(row=len(FIELDS)+1,column=0,columnspan=3,sticky='w',pady=8)
         self.structure_direction=tk.StringVar(value='左侧入射')
         self.structure=DeviceStructure(body,direction_variable=self.structure_direction)
-        self.structure.pack(in_=right,fill='x',pady=(0,4))
-        self.structure.host=right
+        self.structure.minimum_cell=76
+        self.structure.set_compact(True)
+        self.structure.pack(in_=left,fill='x',pady=(0,4),before=notebook)
+        self.structure.host=left
         self.structure_direction.trace_add('write',self.update_structure)
-        controls=ttk.LabelFrame(right,text='求解条件',padding=10); controls.pack(fill='x',pady=(0,7))
+        conditions_scroll=ScrollableFrame(notebook,width=325)
+        notebook.add(conditions_scroll,text='求解与读数')
+        self.band_conditions=conditions_scroll
+        controls=ttk.LabelFrame(conditions_scroll.content,text='求解条件',padding=8)
+        controls.pack(fill='x',pady=(0,7))
         self.mode=tk.StringVar(value='热平衡弯曲能带')
         ttk.Label(controls,text='能带模型').grid(row=0,column=0,sticky='w',padx=3)
         combo=ttk.Combobox(controls,textvariable=self.mode,values=['热平衡弯曲能带','真空参考能级排列'],state='readonly',width=20)
-        combo.grid(row=1,column=0,sticky='ew',padx=3); combo.bind('<<ComboboxSelected>>',self.schedule)
-        controls.columnconfigure(0,weight=2)
+        combo.grid(row=0,column=1,sticky='ew',padx=3,pady=4); combo.bind('<<ComboboxSelected>>',self.schedule)
+        controls.columnconfigure(1,weight=1)
         self.settings={}
-        for col,(key,label,default) in enumerate([('T','温度 / K','300'),('left','左功函数 / eV','5.0'),('right','右功函数 / eV','4.1')],1):
-            ttk.Label(controls,text=label).grid(row=0,column=col,sticky='w',padx=6)
+        for row,(key,label,default) in enumerate([('T','温度 / K','300'),('left','左功函数 / eV','5.0'),('right','右功函数 / eV','4.1')],1):
+            ttk.Label(controls,text=label).grid(row=row,column=0,sticky='w',padx=3)
             var=tk.StringVar(value=default); self.settings[key]=var
-            ttk.Entry(controls,textvariable=var,width=7).grid(row=1,column=col,sticky='ew',padx=6)
-            controls.columnconfigure(col,weight=1);var.trace_add('write',self.schedule)
+            ttk.Entry(controls,textvariable=var,width=7).grid(row=row,column=1,sticky='ew',padx=3,pady=4)
+            var.trace_add('write',self.schedule)
         view_controls=FlowToolbar(right);view_controls.pack(fill='x',pady=(0,4))
         self.view=tk.StringVar(value='能带')
         self.view_combo=ttk.Combobox(view_controls,textvariable=self.view,
@@ -139,21 +146,24 @@ class App(tk.Tk):
         self.show_offsets=tk.BooleanVar(value=True)
         view_controls.add(ttk.Checkbutton(view_controls,text='界面 ΔEc / ΔEv',variable=self.show_offsets,command=self.change_view))
         self.drag_summary=tk.StringVar()
-        drag_label=ttk.Label(right,textvariable=self.drag_summary,foreground='#245565',wraplength=800)
+        drag_label=ttk.Label(conditions_scroll.content,textvariable=self.drag_summary,foreground='#245565',wraplength=300)
         drag_label.pack(fill='x',pady=5)
         self.hover_text=tk.StringVar(value='将鼠标移到图中查看该位置的数值。\n')
-        hover_label=ttk.Label(right,textvariable=self.hover_text,foreground='#245565',wraplength=850,justify='left')
+        hover_label=ttk.Label(conditions_scroll.content,textvariable=self.hover_text,foreground='#245565',wraplength=300,justify='left')
         hover_label.pack(fill='x',pady=(0,5))
-        def resize_band_right(event):
+        def resize_band_readings(event):
             for widget in (drag_label,hover_label):widget.configure(wraplength=max(200,event.width-20))
-            self.structure.fit_height(event.height,left,right,notebook,controls)
-        right.bind('<Configure>',resize_band_right)
-        self.fig=Figure(figsize=(8,6),dpi=100); self.fig.set_layout_engine('tight',pad=1.5)
+        conditions_scroll.content.bind('<Configure>',resize_band_readings,add='+')
+        self.fig=Figure(figsize=(8,6),dpi=100); self.fig.set_layout_engine('tight',pad=.8)
         self.ax=self.fig.add_subplot(111)
         self.canvas=FigureCanvasTkAgg(self.fig,master=right)
         self.canvas.get_tk_widget().configure(width=250,height=140)
         self.toolbar=NavigationToolbar2Tk(self.canvas,right,pack_toolbar=False)
         self.toolbar.pack(side='bottom',fill='x')
+        self.hover_readout=tk.StringVar(value='移到曲线上查看 x、Ec、Ev、Eg；详细数值见左侧「求解与读数」。')
+        self.band_readout=ttk.Label(right,textvariable=self.hover_readout,font=('Microsoft YaHei',9),
+                                    foreground='#245565',width=1,anchor='w',padding=(4,2))
+        self.band_readout.pack(side='bottom',fill='x')
         self.canvas.get_tk_widget().pack(fill='both',expand=True)
         self.canvas.mpl_connect('button_press_event',self.drag_press)
         self.canvas.mpl_connect('motion_notify_event',self.drag_motion)
@@ -248,6 +258,8 @@ class App(tk.Tk):
             self.status.set('未更新：'+str(e)); return False
 
     def plot(self):
+        # Restore automatic layout after the fixed-axes drag preview.
+        self.fig.set_layout_engine('tight',pad=.8)
         r=self.result; ax=self.ax; ax.clear(); pos=0
         ax.set_yscale('linear')
         self.band_artists={};self.offset_artists=[]
@@ -332,6 +344,7 @@ class App(tk.Tk):
 
     def clear_hover(self, event=None):
         self.hover_text.set('将鼠标移到图中查看数值。\n')
+        self.hover_readout.set('移到曲线上查看 x、Ec、Ev、Eg；详细数值见左侧「求解与读数」。')
         line=getattr(self,'hover_line',None)
         if line is not None and line.get_visible():
             line.set_visible(False);self.canvas.draw_idle()
@@ -346,6 +359,7 @@ class App(tk.Tk):
             text+=f"\nφ {v['phi']:.4f} V  ·  E {v['field']:+.3e} V/cm  ·  n {v['n']:.3e} cm⁻³  ·  p {v['p']:.3e} cm⁻³"
         else:text+='\n真空参考排列：不计算静电势、电场和载流子浓度。'
         self.hover_text.set(text)
+        self.hover_readout.set(f"x {x:.2f} nm  ·  Ec {v['Ec']:.3f}  ·  Ev {v['Ev']:.3f}  ·  Eg {v['Eg']:.3f} eV")
         self.hover_line.set_xdata([x,x]);self.hover_line.set_visible(True);self.canvas.draw_idle()
 
     def drag_target(self,event):
@@ -375,6 +389,8 @@ class App(tk.Tk):
         self.index=i;self.refresh_list();self.show_fields()
         self.drag=dict(before=deepcopy(self.layers),result=self.result,index=i,band=key,part=part,
                        y=event.ydata,segments=deepcopy(self.segments),changed=False)
+        # Adding the preview title must not move the axes under the pointer.
+        self.fig.set_layout_engine(None)
         self.canvas.get_tk_widget().focus_set()
         self.canvas.get_tk_widget().configure(cursor='sb_v_double_arrow')
         self.status.set('上下拖动调整带边；左侧参数实时更新。松开求解；Esc 取消。')
