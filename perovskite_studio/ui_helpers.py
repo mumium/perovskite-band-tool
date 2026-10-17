@@ -4,6 +4,18 @@ from tkinter import ttk
 from PIL import Image, ImageDraw, ImageTk
 
 
+def refresh_combobox_on_map(event):
+    """Reattach hidden-tab text after native geometry settles, without writes."""
+    widget = event.widget
+    def refresh():
+        if widget.winfo_exists() and widget.winfo_ismapped():
+            variable = widget.cget('textvariable')
+            if variable:
+                widget.configure(textvariable=variable)
+            widget.xview_moveto(0)
+    widget.after_idle(refresh)
+
+
 def configure_theme(root):
     """A consistent, quiet palette shared by both simulation pages."""
     style = ttk.Style(root)
@@ -27,6 +39,7 @@ def configure_theme(root):
     style.configure('TEntry', padding=(5, 4), fieldbackground='#fbfdff', bordercolor='#d6e0e8')
     style.configure('TCombobox', padding=(4, 4), fieldbackground='#fbfdff', bordercolor='#d6e0e8')
     style.map('TCombobox', fieldbackground=[('readonly', '#fbfdff')])
+    root.bind_class('TCombobox', '<Map>', refresh_combobox_on_map, add='+')
     style.configure('TLabelframe', background='#ffffff', bordercolor='#dce5ec', relief='solid')
     style.configure('TLabelframe.Label', background='#ffffff', foreground='#536c7c', font=('Microsoft YaHei', 9))
     style.configure('TNotebook', background='#ffffff', borderwidth=0, tabmargins=(0, 0, 0, 0))

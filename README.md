@@ -2,7 +2,9 @@
 
 <img src="assets/logo.png" width="96" alt="钙钛矿器件模拟工作台图标">
 
-Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两个独立页面。能带页查看真空参考排列、自洽热平衡能带、电场与载流子浓度；性能页用 SimSS 计算均匀或渐变器件的稳态 J–V、Jsc、Voc、FF、PCE。版本 **1.3.7**。
+Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两个独立页面。能带页查看真空参考排列、自洽热平衡能带、电场与载流子浓度；性能页用 SimSS 计算均匀或渐变器件的稳态 J–V、Jsc、Voc、FF、PCE。版本 **1.3.8**。
+
+1.3.8 更新：性能页均匀模式禁用 Eg / Nd / Na 的右端输入，仅使用材料页数值；χ 独立右端与 α 按当前模式启用，未参与计算的输入不再触发解析错误。切换层、打开项目及运行结束后保持正确状态。下拉栏映射显示后在空闲阶段刷新文字绑定，改善隐藏页签首次显示时的空白问题，不改变选项值或结果。
 
 1.3.7 更新：删除能带页仅用于示意的入射方向选择；两个页面的结构图只保留一行「→ 入射光：左 → 右」说明，性能页随实际照射方向更新，小窗口和横向滚动时仍可见。Windows 构建输出按 `dist/<版本号>/` 分类，旧文件按已确认版本归档，未标注版本的早期文件单独保存。
 
@@ -16,9 +18,9 @@ Python / Windows 桌面工具，将能带分析和器件性能模拟整合到两
 
 双击 `start.bat`，或执行 `python run.py`。依赖：`pip install -r requirements.txt`。
 
-Windows 打包版：双击 `dist/1.3.7/PerovskiteDeviceStudio.exe`，无需安装 Python 或 SimSS。可单独复制 EXE 到其他 Windows 64 位电脑运行。历史文件按版本目录归档，未标注版本的早期文件在 `dist/legacy-unversioned/`。
+Windows 打包版：双击 `dist/1.3.8/PerovskiteDeviceStudio.exe`，无需安装 Python 或 SimSS。可单独复制 EXE 到其他 Windows 64 位电脑运行。历史文件按版本目录归档，未标注版本的早期文件在 `dist/legacy-unversioned/`。
 
-[下载 Windows 1.3.7 单文件版](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.7/PerovskiteDeviceStudio.exe) · [下载文件夹版 ZIP](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.7/PerovskiteDeviceStudio-1.3.7-portable.zip) · [版本发布页](https://github.com/mumium/perovskite-device-studio/releases/tag/v1.3.7)
+[下载 Windows 1.3.8 单文件版](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.8/PerovskiteDeviceStudio.exe) · [下载文件夹版 ZIP](https://github.com/mumium/perovskite-device-studio/releases/download/v1.3.8/PerovskiteDeviceStudio-1.3.8-portable.zip) · [版本发布页](https://github.com/mumium/perovskite-device-studio/releases/tag/v1.3.8)
 
 重新打包：安装项目依赖及 `pyinstaller`，再运行 `build_exe.bat`。程序为单文件无控制台版本，首次启动需要解压运行依赖，可能稍慢。
 
@@ -57,7 +59,7 @@ Windows 打包版：双击 `dist/1.3.7/PerovskiteDeviceStudio.exe`，无需安�
 点击顶部「器件性能模拟」页签。页面初始复制当前三层示例，材料参数与能带页独立，可自由填写文本框（支持科学计数法）。
 
 1. 在能带页设好器件后，点击性能页「从能带页导入参数」。导入复制层顺序、材料参数、温度和电极功函数，按最小带隙初选吸收层，并按功函数初选电极方向和选择性接触；请自行核对。后续修改不会自动同步到另一页。
-2. 逐层检查左侧「材料」，勾选「本层产生光生载流子」。未勾选层仍参与光学吸收和干涉，但不产生自由载流子。「光学」选择本层 n,k、导入数据及吸收边联动模式；初始 PTAA/MAPI/C60 仅为示例映射。「渐变」编辑 Eg、Nd、Na、χ 的模式与右端值。「界面」设置本层与右侧材料之间的陷阱，Nt=0 关闭。
+2. 逐层检查左侧「材料」，勾选「本层产生光生载流子」。未勾选层仍参与光学吸收和干涉，但不产生自由载流子。「光学」选择本层 n,k、导入数据及吸收边联动模式；初始 PTAA/MAPI/C60 仅为示例映射。「渐变」编辑 Eg、Nd、Na、χ 的模式与右端值。均匀模式使用「材料」页的数值，右端输入禁用；χ 选择「独立端点」时仍可单独渐变。α 仅在 Eg 渐变且 χ 随带隙分配时启用。「界面」设置本层与右侧材料之间的陷阱，Nt=0 关闭。
 3. 在右侧「光谱与光学」选择光谱 TMM 或手动 G。新页面默认 AM1.5G、左侧入射、300–800 nm，**入射基底 ITO、前透明电极 ITO/200 nm、背电极 Ag/100 nm**；可自行修改。「光照与扫描」设置完整入射功率密度和电压，默认 -0.04 至 1.5 V、步长 **0.02 V**。「电极与电阻」设置功函数、接触速度、阳极方向与电阻；「计算设置」设置网格、超时和渐变分段数（默认 16）。模拟设置默认折叠，J–V / EQE 开始时收起，完成、失败、取消后保持折叠；点击「模拟设置 ▾」可手动展开，表单支持滚动。
 4. 点击顶部青色「▶ 运行 J–V 模拟」。计算在后台运行，可取消或切换页面。完成后显示 J–V、Jsc、Voc、FF、效率及最大功率点；图表选项可切换「入射光谱」「光生分布」「损失分析」。默认聚焦光伏区域，勾选「完整扫描」查看全部点。第二次成功计算后自动叠加前次曲线、显示指标差值，可取消「上次结果」或「清除对照」。EQE 使用单独的「运行 EQE」按钮。
 5. 顶部「打开参数／保存参数」使用独立性能 JSON，不影响能带项目格式；「导出结果」菜单输出当前视图 CSV、完整结果 JSON、PNG/SVG。结果 JSON 包含输入、光谱、n,k 数据及指纹、G(x)、曲线、指标、警告、离散子层和日志。自定义 CSV 数据内嵌在参数项目中，移动电脑不需另带源文件。**修改输入、导入或打开项目均保留上次成功结果**；运行中、失败或取消时也保留。只有新计算成功才更新。导出对应成功结果的输入快照。

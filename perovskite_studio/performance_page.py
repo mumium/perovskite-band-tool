@@ -143,7 +143,8 @@ class PerformancePage(ttk.Frame):
         grading_scroll = ScrollableFrame(layer_tabs, width=345)
         layer_tabs.add(grading_scroll, text='渐变')
         grading = grading_scroll.content
-        ttk.Label(grading, text='方向：本层左侧 → 右侧；起点使用材料参数。', wraplength=320).pack(anchor='w', pady=5)
+        self.grading_entries = {}
+        ttk.Label(grading, text='方向：本层左侧 → 右侧；起点使用材料参数。\n均匀模式使用材料值，右端输入不参与计算。', wraplength=320).pack(anchor='w', pady=5)
         for key, label in [('Eg', '带隙 Eg / eV'), ('Nd', '施主 Nd / cm⁻³'), ('Na', '受主 Na / cm⁻³')]:
             box = ttk.LabelFrame(grading, text=label, padding=6)
             box.pack(fill='x', pady=4)
@@ -156,8 +157,9 @@ class PerformancePage(ttk.Frame):
             ttk.Label(box, text='右端').pack(side='left', padx=5)
             entry = ttk.Entry(box, textvariable=end, width=13)
             entry.pack(side='left')
+            self.grading_entries[key+'_end'] = entry
             self.input_widgets.extend([combo, entry])
-            mode.trace_add('write', self.mark_dirty)
+            mode.trace_add('write', self.grading_mode_changed)
             end.trace_add('write', self.mark_dirty)
         box = ttk.LabelFrame(grading, text='电子亲和能 χ', padding=6)
         box.pack(fill='x', pady=4)
@@ -172,9 +174,10 @@ class PerformancePage(ttk.Frame):
                 widget = ttk.Combobox(row, textvariable=var, values=['随带隙分配', '独立端点'], state='readonly', width=12)
             else:
                 widget = ttk.Entry(row, textvariable=var, width=13)
+                self.grading_entries[key] = widget
             widget.pack(side='right')
             self.input_widgets.append(widget)
-            var.trace_add('write', self.mark_dirty)
+            var.trace_add('write', self.grading_mode_changed if key == 'affinity_mode' else self.mark_dirty)
         ttk.Label(grading, text='独立端点：χ 线性变化，忽略 α。\n随带隙分配：χ=χ左−α(Eg−Eg左)。\n对数掺杂两端须 > 0；渐变分段数在计算设置中。',
                   foreground='#526779', wraplength=325).pack(anchor='w', pady=6)
 
@@ -519,6 +522,23 @@ class PerformancePage(ttk.Frame):
         self.status.set('参数已修改；当前曲线、指标及导出仍对应上次成功计算。点击右上方运行以更新。'
                         if self.result is not None else '参数已修改，请点击右上方「运行 J–V 模拟」。')
 
+    def active_grading_inputs(self):
+        independent = self.vars['affinity_mode'].get() == '独立端点'
+        return {**{key+'_end': self.vars[key+'_mode'].get() != '均匀'
+                   for key in ('Eg', 'Nd', 'Na')},
+                'chi_end': independent,
+                'band_fraction': not independent and self.vars['Eg_mode'].get() != '均匀'}
+
+    def update_grading_controls(self):
+        for key, active in self.active_grading_inputs().items():
+            self.grading_entries[key].configure(state='normal' if active and not self.running else 'disabled')
+
+    def grading_mode_changed(self, *_):
+        if self.loading:
+            return
+        self.update_grading_controls()
+        self.mark_dirty()
+
     def layout_settings(self, rows, width):
         columns = 2 if width >= 760 else 1
         for i, row in enumerate(rows):
@@ -606,12 +626,17 @@ class PerformancePage(ttk.Frame):
         self.interface_note.set('最后一层：无右侧材料界面，以下设置不参与计算。' if self.index == len(self.layers)-1 else
                                 a['name']+' → '+self.layers[self.index+1]['name'])
         self.update_interface_controls()
+        self.update_grading_controls()
         self.loading = previous
         self.update_structure()
 
     def commit_layer(self):
         a = deepcopy(self.layers[self.index])
+        active = self.active_grading_inputs()
         for key, var in self.vars.items():
+            # Inactive inputs must not affect calculation or block validation.
+            if key in active and not active[key]:
+                continue
             try:
                 a[key] = var.get().strip() if key == 'name' or key.endswith('_mode') else float(var.get())
             except ValueError:
@@ -737,6 +762,7 @@ class PerformancePage(ttk.Frame):
             button.configure(state='normal' if (self.result is not None or self.eqe_result is not None) and not running else 'disabled')
         self.update_optical_mode()
         self.update_interface_controls()
+        self.update_grading_controls()
 
     def run(self):
         if self.running:

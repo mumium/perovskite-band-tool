@@ -7,6 +7,7 @@ import time
 import unittest
 from unittest.mock import patch
 import numpy as np
+from tkinter import ttk
 
 from perovskite_studio.app import App
 
@@ -155,6 +156,93 @@ class PerformanceUI(unittest.TestCase):
             p.run()
         error.assert_called_once()
         self.assertFalse(p.running)
+
+    def test_first_tab_display_preserves_combobox_values_without_dirtying(self):
+        p = self.page
+        def combos(widget):
+            found = []
+            for child in widget.winfo_children():
+                if isinstance(child, ttk.Combobox):
+                    found.append(child)
+                found.extend(combos(child))
+            return found
+        expected = {w: w.get() for w in combos(self.app) if w.cget('textvariable')}
+        writes = []
+        for w in expected:
+            self.app.tk.call('trace', 'add', 'variable', w.cget('textvariable'), 'write',
+                             self.app.register(lambda *_: writes.append(True)))
+        p.dirty = False
+        status = p.status.get()
+        # These tabs are mapped for the first time in this fresh App.
+        for notebook in (p.layer_tabs, p.settings_tabs):
+            if notebook is p.settings_tabs:
+                p.toggle_settings(True)
+            for tab in notebook.tabs():
+                notebook.select(tab)
+                self.app.update()
+                for w in combos(self.app.nametowidget(tab)):
+                    self.assertTrue(w.winfo_ismapped())
+                    self.assertTrue(w.get())
+                    self.assertEqual(w.get(), expected[w])
+                    self.assertEqual(w.xview()[0], 0)
+        self.assertEqual(writes, [])
+        self.assertFalse(p.dirty)
+        self.assertEqual(p.status.get(), status)
+
+    def test_grading_inputs_follow_modes_and_ignore_inactive_text(self):
+        from perovskite_studio.performance import discretize_layers
+        p = self.page
+        before = discretize_layers(p.collect()[0])
+        for key in ('Eg_end', 'Nd_end', 'Na_end', 'chi_end', 'band_fraction'):
+            self.assertEqual(str(p.grading_entries[key]['state']), 'disabled')
+            p.vars[key].set('unused text')
+        after = discretize_layers(p.collect()[0])
+        self.assertEqual(before, after)
+        p.vars['Eg_mode'].set('线性')
+        self.assertEqual(str(p.grading_entries['Eg_end']['state']), 'normal')
+        self.assertEqual(str(p.grading_entries['band_fraction']['state']), 'normal')
+        with self.assertRaises(ValueError):
+            p.commit_layer()
+        p.vars['Eg_end'].set('3.2')
+        p.vars['band_fraction'].set('.2')
+        p.vars['Nd_mode'].set('对数')
+        p.vars['Nd_end'].set('1e18')
+        p.vars['Na_mode'].set('线性')
+        p.vars['Na_end'].set('1e16')
+        p.vars['affinity_mode'].set('独立端点')
+        self.assertEqual(str(p.grading_entries['chi_end']['state']), 'normal')
+        self.assertEqual(str(p.grading_entries['band_fraction']['state']), 'disabled')
+        p.vars['band_fraction'].set('unused text')
+        p.vars['chi_end'].set('2.1')
+        p.commit_layer()
+        self.assertEqual(p.layers[0]['chi_end'], 2.1)
+        p.set_running(True)
+        self.assertTrue(all(str(w['state']) == 'disabled' for w in p.grading_entries.values()))
+        p.set_running(False)
+        for key in ('Eg_end', 'Nd_end', 'Na_end', 'chi_end'):
+            self.assertEqual(str(p.grading_entries[key]['state']), 'normal')
+        self.assertEqual(str(p.grading_entries['band_fraction']['state']), 'disabled')
+        p.vars['Eg_mode'].set('均匀')
+        p.vars['Nd_mode'].set('均匀')
+        p.vars['Na_mode'].set('均匀')
+        p.vars['affinity_mode'].set('随带隙分配')
+        p.commit_layer()
+        p.index = 1
+        p.show_fields()
+        self.assertTrue(all(str(w['state']) == 'disabled' for w in p.grading_entries.values()))
+        p.index = 0
+        p.show_fields()
+        self.assertTrue(all(str(w['state']) == 'disabled' for w in p.grading_entries.values()))
+        p.vars['Eg_mode'].set('线性')
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'gradient.json'
+            with patch('perovskite_studio.performance_page.filedialog.asksaveasfilename', return_value=str(path)):
+                p.save()
+            p.vars['Eg_mode'].set('均匀')
+            with patch('perovskite_studio.performance_page.filedialog.askopenfilename', return_value=str(path)):
+                p.load()
+            self.assertEqual(str(p.grading_entries['Eg_end']['state']), 'normal')
+            self.assertEqual(str(p.grading_entries['Nd_end']['state']), 'disabled')
 
     def test_spectral_mode_profiles_and_portable_custom_data(self):
         p = self.page
