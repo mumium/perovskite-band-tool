@@ -48,6 +48,39 @@ class DragUI(unittest.TestCase):
         a.undo_drag();self.assertEqual(a.layers,first)
         a.undo_drag();self.assertEqual(a.layers,old)
 
+    def test_write_failures_show_errors_and_keep_valid_band_result(self):
+        a=self.app
+        with tempfile.TemporaryDirectory() as folder:
+            # Saving into a nonexistent parent reliably exercises a real OSError.
+            path=Path(folder)/'missing'/'output.json'
+            for method in (a.save,a.export_params,a.export_curve,a.export_image):
+                target=path.with_suffix('.png') if method==a.export_image else path
+                with patch('perovskite_studio.app.filedialog.asksaveasfilename',return_value=str(target)), patch('perovskite_studio.app.messagebox.showerror') as error:
+                    method()
+                error.assert_called_once()
+                self.assertIsNotNone(a.result)
+            with patch('perovskite_studio.app.filedialog.asksaveasfilename',return_value=str(path.with_suffix('.unsupported'))), patch('perovskite_studio.app.messagebox.showerror') as error:
+                a.export_image()
+            error.assert_called_once()
+
+    def test_uniform_inputs_are_disabled_and_unused_text_does_not_block_solve(self):
+        a=self.app
+        old=deepcopy(a.result)
+        for key,entry in a.grading_entries.items():
+            self.assertEqual(str(entry['state']),'disabled')
+            a.vars[key].set('unused text')
+        self.assertTrue(a.calculate())
+        np.testing.assert_array_equal(a.result['Ec'],old['Ec'])
+        a.vars['Eg_mode'].set('线性')
+        self.assertEqual(str(a.grading_entries['Eg_end']['state']),'normal')
+        self.assertFalse(a.calculate())
+        a.vars['Eg_end'].set('3.2');a.vars['band_fraction'].set('.2')
+        self.assertTrue(a.calculate())
+        a.vars['affinity_mode'].set('独立端点')
+        a.vars['chi_end'].set('2.1');a.vars['band_fraction'].set('unused text')
+        self.assertTrue(a.calculate())
+        self.assertEqual(str(a.fraction_entry['state']),'disabled')
+
     def test_cancel_and_toolbar(self):
         a=self.app;old=deepcopy(a.layers)
         self.drag('Ec','left',.1,release=False)

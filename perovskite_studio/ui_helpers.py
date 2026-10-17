@@ -4,6 +4,14 @@ from tkinter import ttk
 from PIL import Image, ImageDraw, ImageTk
 
 
+def active_grading_inputs(variables):
+    independent = variables['affinity_mode'].get() == '独立端点'
+    return {**{key+'_end': variables[key+'_mode'].get() != '均匀'
+               for key in ('Eg', 'Nd', 'Na')},
+            'chi_end': independent,
+            'band_fraction': not independent and variables['Eg_mode'].get() != '均匀'}
+
+
 def refresh_combobox_on_map(event):
     """Reattach hidden-tab text after native geometry settles, without writes."""
     widget = event.widget

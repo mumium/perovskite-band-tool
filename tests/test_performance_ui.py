@@ -189,6 +189,31 @@ class PerformanceUI(unittest.TestCase):
         self.assertFalse(p.dirty)
         self.assertEqual(p.status.get(), status)
 
+    def test_rejected_project_keeps_all_current_inputs_and_results(self):
+        p = self.page
+        layers, settings = p.collect()
+        original = deepcopy(p.layers)
+        original_vars = {k: v.get() for k, v in p.vars.items()}
+        for malformed in ('eqe', 'optics', 'last_interface'):
+            data = dict(schema=1, model='simss', engine='5.36',
+                        layers=deepcopy(layers), settings=deepcopy(settings))
+            data['layers'][0]['name'] = 'Must not replace current layer'
+            if malformed == 'eqe':
+                data['settings']['eqe']['step_nm'] = 'invalid'
+            elif malformed == 'optics':
+                data['settings']['optics']['tco_thickness'] = 'invalid'
+            else:
+                data['layers'][-1]['interface']['trap_type'] = 99
+            with tempfile.TemporaryDirectory() as folder:
+                path = Path(folder)/'bad.json'
+                path.write_text(json.dumps(data), encoding='utf-8')
+                with patch('perovskite_studio.performance_page.filedialog.askopenfilename', return_value=str(path)), patch('perovskite_studio.performance_page.messagebox.showerror') as error:
+                    p.load()
+                error.assert_called_once()
+            self.assertEqual(p.layers, original)
+            self.assertEqual({k: v.get() for k, v in p.vars.items()}, original_vars)
+            self.assertFalse(p.loading)
+
     def test_grading_inputs_follow_modes_and_ignore_inactive_text(self):
         from perovskite_studio.performance import discretize_layers
         p = self.page

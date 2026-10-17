@@ -19,7 +19,7 @@ from .physics import (FIELDS, example, layer, solve, validate, normalize, alignm
 from .analysis_views import analysis_segments, interface_offsets, sample_position
 from .performance_page import PerformancePage
 from .app_info import APP_NAME, APP_ENGLISH_NAME, APP_ID
-from .ui_helpers import ScrollableFrame, FlowToolbar, configure_theme
+from .ui_helpers import ScrollableFrame, FlowToolbar, configure_theme, active_grading_inputs
 from .device_structure import DeviceStructure, preview_layers
 from .paths import RESOURCE_ROOT
 from .windows_icon import install_taskbar_icon
@@ -86,13 +86,15 @@ class App(tk.Tk):
             var.trace_add('write',self.schedule)
         grading_scroll=ScrollableFrame(notebook,width=325);notebook.add(grading_scroll,text='渐变设置')
         grading=grading_scroll.content
+        self.grading_entries={}
         ttk.Label(grading,text='方向：本层左侧 → 本层右侧\n起点使用「基本参数」；均匀模式忽略终点。',justify='left').pack(anchor='w',pady=(0,6))
         for key,label,unit in [('Eg','带隙 Eg','eV'),('Nd','施主浓度 Nd','cm⁻³'),('Na','受主浓度 Na','cm⁻³')]:
             box=ttk.LabelFrame(grading,text=label+' · 右侧终点 '+unit,padding=6); box.pack(fill='x',pady=3)
             mode=tk.StringVar(value='均匀'); self.vars[key+'_mode']=mode
             ttk.Combobox(box,textvariable=mode,values=['均匀','线性'] if key=='Eg' else ['均匀','线性','对数'],state='readonly',width=9).grid(row=0,column=0,padx=3)
             end=tk.StringVar(); self.vars[key+'_end']=end
-            ttk.Entry(box,textvariable=end,width=13).grid(row=0,column=1,padx=6)
+            entry=ttk.Entry(box,textvariable=end,width=13)
+            entry.grid(row=0,column=1,padx=6);self.grading_entries[key+'_end']=entry
             mode.trace_add('write',self.schedule); end.trace_add('write',self.schedule)
         box=ttk.LabelFrame(grading,text='电子亲和能 χ · 右侧终点 eV',padding=6);box.pack(fill='x',pady=3)
         affinity=tk.StringVar(value='随带隙分配');self.vars['affinity_mode']=affinity
@@ -106,6 +108,7 @@ class App(tk.Tk):
         ttk.Label(box,text='导带分配比例 α（0–1）').pack(anchor='w')
         self.fraction_entry=ttk.Entry(box,textvariable=fraction,width=12)
         self.fraction_entry.pack(anchor='w',pady=5)
+        self.grading_entries.update(chi_end=self.chi_end_entry,band_fraction=self.fraction_entry)
         fraction.trace_add('write',self.schedule)
         ttk.Label(box,text='0：固定电子亲和能，只改变价带\n1：固定真空参考价带，只改变导带\n0.5：带隙变化由两条带边均分',justify='left').pack(anchor='w')
         ttk.Label(grading,text='拖动会切换到「独立端点」，同步 Eg、χ。\n掺杂线性允许零浓度；对数两端须为正。',justify='left').pack(anchor='w',pady=6)
@@ -206,15 +209,18 @@ class App(tk.Tk):
         self.update_structure()
 
     def update_band_controls(self):
-        independent=self.vars['affinity_mode'].get()=='独立端点'
-        self.chi_end_entry.configure(state='normal' if independent else 'disabled')
-        self.fraction_entry.configure(state='disabled' if independent else 'normal')
+        for key,active in active_grading_inputs(self.vars).items():
+            self.grading_entries[key].configure(state='normal' if active else 'disabled')
         a=self.layers[self.index];p=profile(a,[0,1])
         self.drag_summary.set(f"{a['name']}  |  左 → 右：Eg {p['Eg'][0]:.4f} → {p['Eg'][1]:.4f} eV；"
                               f"χ {p['chi'][0]:.4f} → {p['chi'][1]:.4f} eV")
 
     def commit(self):
-        a={k:(v.get() if k=='name' or k.endswith('_mode') else float(v.get())) for k,v in self.vars.items()}
+        a=normalize(self.layers[self.index])
+        active=active_grading_inputs(self.vars)
+        for k,v in self.vars.items():
+            if k in active and not active[k]:continue
+            a[k]=v.get() if k=='name' or k.endswith('_mode') else float(v.get())
         temp=[dict(z) for z in self.layers]; temp[self.index]=a
         settings={k:float(v.get()) for k,v in self.settings.items()}
         validate(temp,settings['T'],settings['left'],settings['right'])
@@ -485,7 +491,9 @@ class App(tk.Tk):
         try:s=self.commit()
         except Exception as e:messagebox.showerror('参数错误',str(e));return
         p=filedialog.asksaveasfilename(defaultextension='.json',filetypes=[('参数项目','*.json')])
-        if p:Path(p).write_text(json.dumps(dict(schema=3,layers=self.layers,settings=s,mode=self.mode.get()),ensure_ascii=False,indent=2),encoding='utf-8')
+        if p:
+            try:Path(p).write_text(json.dumps(dict(schema=3,layers=self.layers,settings=s,mode=self.mode.get()),ensure_ascii=False,indent=2),encoding='utf-8')
+            except OSError as e:messagebox.showerror('保存失败',str(e),parent=self)
 
     def load(self):
         p=filedialog.askopenfilename(filetypes=[('参数项目','*.json')])
@@ -507,11 +515,13 @@ class App(tk.Tk):
         except Exception as e:messagebox.showerror('参数错误',str(e));return
         p=filedialog.asksaveasfilename(defaultextension='.csv')
         if p:
-            with open(p,'w',newline='',encoding='utf-8-sig') as f:
-                extra=['Eg_mode','Eg_end','Nd_mode','Nd_end','Na_mode','Na_end','band_fraction','affinity_mode','chi_end']
-                w=csv.writer(f);w.writerow(['材料']+[f'{label} ({unit})' for _,label,unit in FIELDS]+['Eg渐变','Eg右端_eV','Nd渐变','Nd右端_cm-3','Na渐变','Na右端_cm-3','导带分配比例','电子亲和能模式','独立χ右端_eV'])
-                for a in self.layers:
-                    a=normalize(a);w.writerow([a['name']]+[a[k] for k,_,_ in FIELDS]+[a[k] for k in extra])
+            try:
+                with open(p,'w',newline='',encoding='utf-8-sig') as f:
+                    extra=['Eg_mode','Eg_end','Nd_mode','Nd_end','Na_mode','Na_end','band_fraction','affinity_mode','chi_end']
+                    w=csv.writer(f);w.writerow(['材料']+[f'{label} ({unit})' for _,label,unit in FIELDS]+['Eg渐变','Eg右端_eV','Nd渐变','Nd右端_cm-3','Na渐变','Na右端_cm-3','导带分配比例','电子亲和能模式','独立χ右端_eV'])
+                    for a in self.layers:
+                        a=normalize(a);w.writerow([a['name']]+[a[k] for k,_,_ in FIELDS]+[a[k] for k in extra])
+            except OSError as e:messagebox.showerror('导出失败',str(e),parent=self)
 
     def export_curve(self):
         if not self.calculate():return
@@ -523,12 +533,15 @@ class App(tk.Tk):
                 r['field']=np.concatenate([s['field'][1:-1] for s in self.segments])
                 keys+=['field'];header+=['E_V_per_cm']
             keys+=['Eg','chi','Nd','Na'];header+=['Eg_eV','chi_eV','Nd_cm-3','Na_cm-3']
-            np.savetxt(p,np.column_stack([r[k] for k in keys]),delimiter=',',header=','.join(header),comments='')
+            try:np.savetxt(p,np.column_stack([r[k] for k in keys]),delimiter=',',header=','.join(header),comments='')
+            except OSError as e:messagebox.showerror('导出失败',str(e),parent=self)
 
     def export_image(self):
         if not self.calculate():return
         p=filedialog.asksaveasfilename(defaultextension='.png',filetypes=[('PNG','*.png'),('SVG','*.svg')])
-        if p:self.fig.savefig(p,dpi=220,bbox_inches='tight')
+        if p:
+            try:self.fig.savefig(p,dpi=220,bbox_inches='tight')
+            except (OSError,ValueError) as e:messagebox.showerror('导出失败',str(e),parent=self)
 
     def compare(self):
         if self.calculate():

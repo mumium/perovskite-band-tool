@@ -13,7 +13,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 from .physics import FIELDS, layer
-from .ui_helpers import ScrollableFrame, FlowToolbar
+from .ui_helpers import ScrollableFrame, FlowToolbar, active_grading_inputs
 from .device_structure import DeviceStructure, preview_layers, STRUCTURES_DIR
 from .optics import (NK_LIBRARY, OPTICS_DEFAULTS, get_optics, default_nk,
                     nk_table, read_csv, spectrum_table, optical_model)
@@ -523,11 +523,7 @@ class PerformancePage(ttk.Frame):
                         if self.result is not None else '参数已修改，请点击右上方「运行 J–V 模拟」。')
 
     def active_grading_inputs(self):
-        independent = self.vars['affinity_mode'].get() == '独立端点'
-        return {**{key+'_end': self.vars[key+'_mode'].get() != '均匀'
-                   for key in ('Eg', 'Nd', 'Na')},
-                'chi_end': independent,
-                'band_fraction': not independent and self.vars['Eg_mode'].get() != '均匀'}
+        return active_grading_inputs(self.vars)
 
     def update_grading_controls(self):
         for key, active in self.active_grading_inputs().items():
@@ -1070,6 +1066,36 @@ class PerformancePage(ttk.Frame):
             for i, a in enumerate(data['layers']):
                 a.setdefault('optical_nk', default_nk(i, absorber))
             validate_device(data['layers'], data['settings'])
+            # Check every value rendered by the UI before replacing live inputs.
+            # Manual-G validation intentionally skips inactive optical settings.
+            eqe = dict(EQE_DEFAULTS) | data['settings'].get('eqe', {})
+            for key in self.eqe_vars:
+                if not np.isfinite(eqe[key]):
+                    raise ValueError('EQE 设置须为有限数值')
+                format(eqe[key], 'g')
+            o = get_optics(data['settings'])
+            for key in self.optical_numbers:
+                if not np.isfinite(o[key]):
+                    raise ValueError('光学设置须为有限数值')
+                format(o[key], 'g')
+            for key in self.optical_specs:
+                spec = o[key]
+                if not isinstance(spec['name'], str):
+                    raise ValueError('光学数据名称须为文本')
+                (spectrum_table if key == 'spectrum' else nk_table)(spec)
+            for a in data['layers']:
+                for key in self.vars:
+                    if key != 'name' and not key.endswith('_mode'):
+                        format(a[key], '.12g')
+                nk_table(a['optical_nk'])
+                if not isinstance(a['optical_nk']['name'], str):
+                    raise ValueError('光学数据名称须为文本')
+                format(optical_model(a)['reference_gap'], 'g')
+                inter = interface_parameters(a)
+                for key in self.interface_vars:
+                    format(inter[key], 'g')
+                if inter['trap_type'] not in (-1, 0, 1):
+                    raise ValueError('界面陷阱类型无效')
             self.loading = True
             self.layers = data['layers']
             self.index = 0
@@ -1077,7 +1103,6 @@ class PerformancePage(ttk.Frame):
                 var.set(f"{data['settings'][key]:g}")
             self.left_anode.set(bool(data['settings']['left_anode']))
             self.show_optical_settings(data['settings'])
-            eqe = dict(EQE_DEFAULTS) | data['settings'].get('eqe', {})
             for key, var in self.eqe_vars.items():
                 var.set(f'{eqe[key]:g}')
             self.show_fields()
@@ -1159,7 +1184,7 @@ class PerformancePage(ttk.Frame):
                     figure = jv_export_figure(self.result, previous,
                                               limits=(self.ax.get_xlim(), self.ax.get_ylim()))
                 figure.savefig(path, dpi=200, bbox_inches='tight', facecolor='white')
-            except OSError as e:
+            except (OSError, ValueError) as e:
                 messagebox.showerror('保存失败', str(e), parent=self)
 
     def shutdown(self):
