@@ -1,0 +1,10 @@
+{
+  "profile_count": 127,
+  "main_cases": 95,
+  "validation_cases": 32,
+  "main_nodes": 47690,
+  "validation_nodes": 40564,
+  "all_exported_xyG_values_exact": true,
+  "all_raw_source_hashes_unchanged": true,
+  "independent_maximum_integral_error_mA_cm2": 7.105427357601002e-15
+}

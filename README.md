@@ -48,6 +48,8 @@ Windows 打包版：双击 `dist/1.3.7/PerovskiteDeviceStudio.exe`，无需安�
 
 [2026-10-15 研究结果索引](research/2026-10-15/README.md) 包含两次双层厚度优化，以及 800 nm 单层与 640/160 nm 双层的性能、J–V、EQE 和积分电流对照。
 
+[Air / 1.53 eV 全部95个厚度的光生分布补充](research/2026-10-15/02_air_1p53_scan/README.md)：逐组 G(x) CSV、原始节点长表、光生积分和32组数值复核，含可选择厚度的离线图表。
+
 [下载全部报告与完整源数据](https://github.com/mumium/perovskite-device-studio/releases/tag/research-2026-10-15)。解压后双击 `开始查看.html`，即可离线查看，无需安装 Python 或模拟软件。原参数结果与光学参考值敏感性检查分开保存，真实宽带隙材料的光学常数仍需按组分验证。
 
 ## 器件性能模拟

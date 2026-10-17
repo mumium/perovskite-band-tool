@@ -1,3 +1,5 @@
 # Keep upstream scientific tables byte-identical, including their line endings.
 assets/optics/AM1.5G_ASTMG173.csv -text whitespace=cr-at-eol
 assets/optics/nk_*.txt -text whitespace=-blank-at-eol
+# Preserve byte hashes for exported scientific data, including UTF-8 BOM/CRLF.
+research/2026-10-15/02_air_1p53_scan/光生分布数据/** -text whitespace=cr-at-eol

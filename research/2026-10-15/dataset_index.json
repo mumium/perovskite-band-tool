@@ -19,7 +19,18 @@
       "report": "扫描结果报告.html",
       "summary": "性能参数汇总.csv",
       "count": "95 个厚度的 J–V，其中 51 组配套 EQE",
-      "condition": "按新器件文件保留光学设置。正式 500 网格/16 分段；另有 2000 网格/100 分段候选复核。"
+      "condition": "按新器件文件保留光学设置。正式 500 网格/16 分段；另有 2000 网格/100 分段候选复核。",
+      "photogeneration_supplement": {
+        "date": "2026-10-17",
+        "main_cases": 95,
+        "main_nodes": 47690,
+        "validation_cases": 32,
+        "report": "光生分布补充报告.html",
+        "master_csv": "光生分布数据/全部95条件_光生分布长表.csv",
+        "archive": "air-1p53-Gx-supplement-2026-10-17.zip",
+        "download_url": "https://github.com/mumium/perovskite-device-studio/releases/download/research-2026-10-15/air-1p53-Gx-supplement-2026-10-17.zip",
+        "rerun": false
+      }
     },
     {
       "id": "03_single_vs_dual",
